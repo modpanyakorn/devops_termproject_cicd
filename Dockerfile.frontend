@@ -2,5 +2,16 @@ FROM php:8.0-apache
 RUN docker-php-ext-install mysqli && docker-php-ext-enable mysqli
 RUN apt-get update && apt-get upgrade -y
 
-# เพิ่มการ copy ไฟล์ frontend
-COPY src/frontend/ /var/www/html/
+# Debug: แสดงไฟล์ที่จะ copy
+RUN ls -la src/frontend
+
+# COPY ด้วย full path
+COPY ./src/frontend/index.html /var/www/html/index.html
+COPY ./src/frontend/ /var/www/html/
+
+# เปิด mod_rewrite
+RUN a2enmod rewrite
+
+# แก้ permission
+RUN chown -R www-data:www-data /var/www/html
+RUN chmod -R 755 /var/www/html
