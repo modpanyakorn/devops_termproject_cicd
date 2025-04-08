@@ -1,4 +1,4 @@
-# version: "3.8"
+version: "3.8"
 
 services:
   apache-web-server:
@@ -17,8 +17,9 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.backend
+    restart: on-failure # หากเกิดข้อผิดพลาด จะรีสตาร์ทโดยอัตโนมัติ
     env_file:
-      - .env # โหลดค่า environment variables จากไฟล์ .env
+      - .env
     ports:
       - "${BACKEND_PORT}:3000"
     depends_on:
@@ -32,19 +33,35 @@ services:
     image: mysql:latest
     restart: always
     env_file:
-      - .env # โหลดค่าตัวแปรจาก .env
+      - .env
     environment:
-      MYSQL_ROOT_PASSWORD: "${MYSQL_ROOT_PASSWORD}" # ใช้ค่าจาก .env
-      MYSQL_DATABASE: "${MYSQL_DATABASE}" # ใช้ค่าจาก .env
-      MYSQL_USER: "${MYSQL_USER}" # ใช้ค่าจาก .env
-      MYSQL_PASSWORD: "${MYSQL_PASSWORD}" # ใช้ค่าจาก .env
+      MYSQL_ROOT_PASSWORD: "${MYSQL_ROOT_PASSWORD}"
+      MYSQL_DATABASE: "${MYSQL_DATABASE}"
+      MYSQL_USER: "${MYSQL_USER}"
+      MYSQL_PASSWORD: "${MYSQL_PASSWORD}"
     ports:
-      - "${MYSQL_HOST_PORT}:${MYSQL_CONTAINER_PORT}" # ใช้ค่าจาก .env
+      - "${MYSQL_HOST_PORT}:${MYSQL_CONTAINER_PORT}"
     volumes:
       - db_data:/var/lib/mysql
       - ./easyroom-docker.sql:/docker-entrypoint-initdb.d/easyroom.sql
     networks:
       - my-network
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "mysqladmin",
+          "ping",
+          "-h",
+          "localhost",
+          "-u",
+          "root",
+          "-p${MYSQL_ROOT_PASSWORD}",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
 
   phpmyadmin:
     image: phpmyadmin/phpmyadmin
@@ -55,14 +72,14 @@ services:
     environment:
       PMA_HOST: mysql
       PMA_USER: root
-      PMA_PASSWORD: "${MYSQL_ROOT_PASSWORD}" # ใช้ค่าจาก .env
+      PMA_PASSWORD: "${MYSQL_ROOT_PASSWORD}"
     networks:
       - my-network
-
-volumes:
-  db_data:
-    driver: local
 
 networks:
   my-network:
     driver: bridge
+
+volumes:
+  db_data:
+    driver: local

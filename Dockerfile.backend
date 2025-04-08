@@ -2,17 +2,18 @@ FROM node:18-alpine
 
 WORKDIR /app
 
-# ติดตั้ง bash เพื่อใช้กับ wait-for-it
-RUN apk add --no-cache bash curl
+# ติดตั้ง dependencies ที่จำเป็น
+RUN apk add --no-cache bash netcat-openbsd
 
 # Copy ไฟล์ backend
 COPY src/backend/package*.json ./
 RUN npm install
 
 COPY src/backend/ ./
-COPY wait-for-it.sh ./
+COPY wait-for-it.sh ./ 
 RUN chmod +x wait-for-it.sh
 
 EXPOSE 3000
 
-CMD ["./wait-for-it.sh", "mysql:3306", "--", "node", "server.js"]
+# รอให้ MySQL พร้อมก่อนเริ่มต้น app
+CMD ["./wait-for-it.sh", "mysql:3306", "node", "server.js"]
