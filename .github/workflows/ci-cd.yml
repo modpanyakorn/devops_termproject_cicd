@@ -5,14 +5,9 @@ on:
     branches:
       - main
   workflow_dispatch:
-    inputs:
-      deployment_reason:
-        description: "Reason for manual deployment"
-        required: false
-        default: "Manual deployment"
 
 jobs:
-  prepare-deployment:
+  test:
     name: 🔍 Prepare Deployment
     runs-on: ubuntu-latest
     steps:
@@ -35,7 +30,7 @@ jobs:
 
   build-frontend:
     name: 🌐 Build Frontend Image
-    needs: prepare-deployment
+    needs: test
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Repository
@@ -59,7 +54,7 @@ jobs:
 
   build-backend:
     name: 🚀 Build Backend Image
-    needs: prepare-deployment
+    needs: test
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Repository
@@ -176,7 +171,9 @@ jobs:
       - name: Check Frontend Availability
         run: |
           sleep 30  # รอให้ container เริ่มทำงาน
-          response=$(curl -s -o /dev/null -w "%{http_code}" http://${{ secrets.EC2_HOST }}:80)
+          echo "Checking frontend at http://${{ secrets.EC2_HOST }}:80"
+          response=$(curl -v -s -o /dev/null -w "%{http_code}" http://${{ secrets.EC2_HOST }}:80)
+          echo "Response code: $response"
           if [ $response -ne 200 ]; then
             echo "Frontend not responding correctly"
             exit 1
