@@ -12,47 +12,30 @@ on:
         default: "Manual deployment"
 
 jobs:
-  code-quality-check:
-    name: 🕵️ Code Quality Check
+  prepare-deployment:
+    name: 🔍 Prepare Deployment
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v3
 
-      - name: Check Project Structure
+      - name: Verify Project Structure
         run: |
           echo "Checking project structure..."
-          test -f .env || (echo "❌ .env file missing" && exit 1)
+          test -f .env || (echo "❌ Root .env file missing" && exit 1)
+          test -f src/backend/.env || (echo "❌ Backend .env file missing" && exit 1)
           test -d src/frontend || (echo "❌ Frontend directory missing" && exit 1)
           test -d src/backend || (echo "❌ Backend directory missing" && exit 1)
           echo "✅ Project structure validated"
 
-  prepare-deployment:
-    name: 📦 Prepare Deployment Files
-    needs: code-quality-check
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v3
-
-      - name: Create Deployment Directory
+      - name: Copy .env Files
         run: |
-          mkdir -p deployment
-          cp .env deployment/
-          cp docker-compose.yml deployment/
-          cp Dockerfile.frontend deployment/
-          cp Dockerfile.backend deployment/
-          cp wait-for-it.sh deployment/ || true
-
-      - name: Upload Deployment Artifacts
-        uses: actions/upload-artifact@v3
-        with:
-          name: deployment-files
-          path: deployment/
+          cp .env ./src/backend/.env
+          cat ./src/backend/.env
 
   build-frontend:
     name: 🌐 Build Frontend Image
-    needs: code-quality-check
+    needs: prepare-deployment
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Repository
@@ -76,7 +59,7 @@ jobs:
 
   build-backend:
     name: 🚀 Build Backend Image
-    needs: code-quality-check
+    needs: prepare-deployment
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Repository
@@ -101,16 +84,12 @@ jobs:
   deploy-to-ec2:
     name: 🖥️ Deploy to EC2
     needs:
-      - prepare-deployment
       - build-frontend
       - build-backend
     runs-on: ubuntu-latest
     steps:
-      - name: Download Deployment Artifacts
-        uses: actions/download-artifact@v3
-        with:
-          name: deployment-files
-          path: deployment/
+      - name: Checkout Repository
+        uses: actions/checkout@v3
 
       - name: Deploy to EC2
         uses: appleboy/ssh-action@master
@@ -120,16 +99,59 @@ jobs:
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
             # สร้างโฟลเดอร์สำหรับ deployment
-            mkdir -p ~/easyroom-deployment
+            mkdir -p ~/easyroom-deployment/backend
             cd ~/easyroom-deployment
 
-            # คัดลอกไฟล์การ deploy
-            rm -rf *
+            # คัดลอก .env จาก localhost
             scp -o StrictHostKeyChecking=no -i <(echo "${{ secrets.EC2_SSH_KEY }}") \
-                deployment/* ${{ secrets.EC2_USERNAME }}@${{ secrets.EC2_HOST }}:~/easyroom-deployment/
+                .env ${{ secrets.EC2_USERNAME }}@${{ secrets.EC2_HOST }}:~/easyroom-deployment/.env
 
-            # ตรวจสอบไฟล์
-            ls -la
+            # คัดลอก docker-compose.yml
+            cat > docker-compose.yml << EOL
+            version: "3.8"
+            services:
+              apache-web-server:
+                image: ${{ secrets.DOCKER_HUB_USERNAME }}/easyroom-frontend:latest
+                volumes:
+                  - ./frontend:/var/www/html/
+                ports:
+                  - "80:80"
+                networks:
+                  - my-network
+
+              node:
+                image: ${{ secrets.DOCKER_HUB_USERNAME }}/easyroom-backend:latest
+                restart: on-failure
+                env_file:
+                  - .env
+                ports:
+                  - "3000:3000"
+                depends_on:
+                  - mysql
+                volumes:
+                  - ./backend/storage:/app/storage
+                networks:
+                  - my-network
+
+              mysql:
+                image: mysql:latest
+                restart: always
+                env_file:
+                  - .env
+                volumes:
+                  - db_data:/var/lib/mysql
+                  - ./easyroom-docker.sql:/docker-entrypoint-initdb.d/easyroom.sql
+                networks:
+                  - my-network
+
+            networks:
+              my-network:
+                driver: bridge
+
+            volumes:
+              db_data:
+                driver: local
+            EOL
 
             # Login Docker Hub
             docker login -u ${{ secrets.DOCKER_HUB_USERNAME }} -p ${{ secrets.DOCKER_HUB_TOKEN }}
@@ -154,7 +176,7 @@ jobs:
       - name: Check Frontend Availability
         run: |
           sleep 30  # รอให้ container เริ่มทำงาน
-          response=$(curl -s -o /dev/null -w "%{http_code}" http://${{ secrets.EC2_HOST }}:8080)
+          response=$(curl -s -o /dev/null -w "%{http_code}" http://${{ secrets.EC2_HOST }}:80)
           if [ $response -ne 200 ]; then
             echo "Frontend not responding correctly"
             exit 1
