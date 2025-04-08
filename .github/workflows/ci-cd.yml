@@ -2,11 +2,11 @@ name: Deploy to AWS EC2
 
 on:
   push:
-    branches: [main] # หรือ master หรือ branch ที่คุณต้องการ trigger
+    branches: [main] # หรือ master
 
 jobs:
-  # Stage 1: Build Frontend Image
-  build-frontend:
+  # Stage 1: Build and Push Images
+  build-docker-images:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -29,22 +29,6 @@ jobs:
           push: true
           tags: ${{ secrets.DOCKER_HUB_USERNAME }}/easyroom-frontend:latest
 
-  # Stage 2: Build Backend Image
-  build-backend:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v2
-
-      - name: Login to Docker Hub
-        uses: docker/login-action@v2
-        with:
-          username: ${{ secrets.DOCKER_HUB_USERNAME }}
-          password: ${{ secrets.DOCKER_HUB_TOKEN }}
-
       - name: Build and push backend image
         uses: docker/build-push-action@v4
         with:
@@ -53,154 +37,11 @@ jobs:
           push: true
           tags: ${{ secrets.DOCKER_HUB_USERNAME }}/easyroom-backend:latest
 
-  # Stage 3: Prepare Deployment Files
-  prepare-deployment:
-    runs-on: ubuntu-latest
-    needs: [build-frontend, build-backend]
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
-
-      - name: Create .env file for production
-        run: |
-          cat > .env.prod << EOL
-          # Production environment
-          FRONTEND_PORT=80
-          BACKEND_PORT=3000
-          API_PORT=3000
-          API_HOST=0.0.0.0
-
-          DB_HOST=mysql
-          DB_PORT=3306
-          DB_USER=easyroomteam
-          DB_PASSWORD=1234
-          DB_NAME=easyroom
-
-          MYSQL_ROOT_PASSWORD=1234
-          MYSQL_DATABASE=easyroom
-          MYSQL_USER=easyroomteam
-          MYSQL_PASSWORD=1234
-          MYSQL_CONTAINER_PORT=3306
-          MYSQL_HOST_PORT=3306
-
-          DOCKER_HUB_USERNAME=${{ secrets.DOCKER_HUB_USERNAME }}
-          EOL
-
-      - name: Create docker-compose.prod.yml
-        run: |
-          cat > docker-compose.prod.yml << EOL
-          version: "3.8"
-
-          services:
-            apache-web-server:
-              image: ${{ secrets.DOCKER_HUB_USERNAME }}/easyroom-frontend:latest
-              restart: always
-              ports:
-                - "80:80"
-              networks:
-                - my-network
-
-            node:
-              image: ${{ secrets.DOCKER_HUB_USERNAME }}/easyroom-backend:latest
-              restart: always
-              env_file:
-                - .env.prod
-              ports:
-                - "\${BACKEND_PORT}:3000"
-              depends_on:
-                - mysql
-              volumes:
-                - backend_storage:/app/storage
-              networks:
-                - my-network
-
-            mysql:
-              image: mysql:latest
-              restart: always
-              env_file:
-                - .env.prod
-              environment:
-                MYSQL_ROOT_PASSWORD: "\${MYSQL_ROOT_PASSWORD}"
-                MYSQL_DATABASE: "\${MYSQL_DATABASE}"
-                MYSQL_USER: "\${MYSQL_USER}"
-                MYSQL_PASSWORD: "\${MYSQL_PASSWORD}"
-              volumes:
-                - db_data:/var/lib/mysql
-              networks:
-                - my-network
-
-            phpmyadmin:
-              image: phpmyadmin/phpmyadmin
-              depends_on:
-                - mysql
-              ports:
-                - "8000:80"
-              environment:
-                PMA_HOST: mysql
-                PMA_USER: root
-                PMA_PASSWORD: "\${MYSQL_ROOT_PASSWORD}"
-              networks:
-                - my-network
-
-          volumes:
-            db_data:
-              driver: local
-            backend_storage:
-              driver: local
-
-          networks:
-            my-network:
-              driver: bridge
-          EOL
-
-      - name: Upload .env.prod as artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: env-file
-          path: .env.prod
-
-      - name: Upload docker-compose.prod.yml as artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: docker-compose-file
-          path: docker-compose.prod.yml
-
-      - name: Upload database file as artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: db-file
-          path: easyroom.sql
-
-  # Stage 4: Deploy to EC2
+  # Stage 2: Deploy directly to EC2 (ไม่ใช้ artifacts)
   deploy:
+    needs: build-docker-images
     runs-on: ubuntu-latest
-    needs: [prepare-deployment]
     steps:
-      - name: Download .env.prod artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: env-file
-
-      - name: Download docker-compose.prod.yml artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: docker-compose-file
-
-      - name: Download database file artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: db-file
-
-      - name: Copy necessary files to EC2
-        uses: appleboy/scp-action@master
-        with:
-          host: ${{ secrets.EC2_HOST }}
-          username: ${{ secrets.EC2_USERNAME }}
-          key: ${{ secrets.EC2_SSH_KEY }}
-          source: ".env.prod,docker-compose.prod.yml,easyroom.sql"
-          target: "~/easyroom-deployment"
-          timeout: "120s"
-
       - name: Deploy to EC2
         uses: appleboy/ssh-action@master
         with:
@@ -208,18 +49,104 @@ jobs:
           username: ${{ secrets.EC2_USERNAME }}
           key: ${{ secrets.EC2_SSH_KEY }}
           timeout: "120s"
-          command_timeout: "30m"
           script: |
+            # สร้างโฟลเดอร์ถ้ายังไม่มี
+            mkdir -p ~/easyroom-deployment
             cd ~/easyroom-deployment
 
-            # เปลี่ยนชื่อไฟล์ .env
-            mv .env.prod .env
+            # สร้างไฟล์ .env
+            cat > .env << EOL
+            # Production environment
+            FRONTEND_PORT=80
+            BACKEND_PORT=3000
+            API_PORT=3000
+            API_HOST=0.0.0.0
 
-            # ดึง images ล่าสุดจาก Docker Hub
-            docker-compose -f docker-compose.prod.yml pull
+            DB_HOST=mysql
+            DB_PORT=3306
+            DB_USER=easyroomteam
+            DB_PASSWORD=1234
+            DB_NAME=easyroom
 
-            # รีสตาร์ท containers
-            docker-compose -f docker-compose.prod.yml down || true
-            docker-compose -f docker-compose.prod.yml up -d
+            MYSQL_ROOT_PASSWORD=1234
+            MYSQL_DATABASE=easyroom
+            MYSQL_USER=easyroomteam
+            MYSQL_PASSWORD=1234
+            MYSQL_CONTAINER_PORT=3306
+            MYSQL_HOST_PORT=3306
 
-            echo "Deployment complete!"
+            DOCKER_HUB_USERNAME=${{ secrets.DOCKER_HUB_USERNAME }}
+            EOL
+
+            # สร้างไฟล์ docker-compose.yml
+            cat > docker-compose.yml << EOL
+            version: "3.8"
+
+            services:
+              apache-web-server:
+                image: ${{ secrets.DOCKER_HUB_USERNAME }}/easyroom-frontend:latest
+                restart: always
+                ports:
+                  - "80:80"
+                networks:
+                  - my-network
+
+              node:
+                image: ${{ secrets.DOCKER_HUB_USERNAME }}/easyroom-backend:latest
+                restart: on-failure
+                env_file:
+                  - .env
+                ports:
+                  - "\${BACKEND_PORT}:3000"
+                depends_on:
+                  - mysql
+                volumes:
+                  - backend_storage:/app/storage
+                networks:
+                  - my-network
+
+              mysql:
+                image: mysql:latest
+                restart: always
+                env_file:
+                  - .env
+                environment:
+                  MYSQL_ROOT_PASSWORD: "\${MYSQL_ROOT_PASSWORD}"
+                  MYSQL_DATABASE: "\${MYSQL_DATABASE}"
+                  MYSQL_USER: "\${MYSQL_USER}"
+                  MYSQL_PASSWORD: "\${MYSQL_PASSWORD}"
+                volumes:
+                  - db_data:/var/lib/mysql
+                networks:
+                  - my-network
+
+              phpmyadmin:
+                image: phpmyadmin/phpmyadmin
+                depends_on:
+                  - mysql
+                ports:
+                  - "8000:80"
+                environment:
+                  PMA_HOST: mysql
+                  PMA_USER: root
+                  PMA_PASSWORD: "\${MYSQL_ROOT_PASSWORD}"
+                networks:
+                  - my-network
+
+            volumes:
+              db_data:
+                driver: local
+              backend_storage:
+                driver: local
+
+            networks:
+              my-network:
+                driver: bridge
+            EOL
+
+            # รัน docker-compose
+            docker-compose pull
+            docker-compose down || true
+            docker-compose up -d
+
+            echo "Deployment completed!"
