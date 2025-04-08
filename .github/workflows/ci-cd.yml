@@ -19,6 +19,11 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v3
 
+      - name: Copy .env Files
+        run: |
+          cp .env src/backend/.env
+          cat src/backend/.env
+
       - name: Verify Project Structure
         run: |
           echo "Checking project structure..."
@@ -27,11 +32,6 @@ jobs:
           test -d src/frontend || (echo "❌ Frontend directory missing" && exit 1)
           test -d src/backend || (echo "❌ Backend directory missing" && exit 1)
           echo "✅ Project structure validated"
-
-      - name: Copy .env Files
-        run: |
-          cp .env ./src/backend/.env
-          cat ./src/backend/.env
 
   build-frontend:
     name: 🌐 Build Frontend Image
