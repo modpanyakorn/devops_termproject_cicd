@@ -2,11 +2,10 @@ name: Deploy to AWS EC2
 
 on:
   push:
-    branches: [main] # หรือ master
+    branches: [main]
 
 jobs:
-  # Stage 1: Build and Push Images
-  build-docker-images:
+  build:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -37,18 +36,30 @@ jobs:
           push: true
           tags: ${{ secrets.DOCKER_HUB_USERNAME }}/easyroom-backend:latest
 
-  # Stage 2: Deploy directly to EC2 (ไม่ใช้ artifacts)
   deploy:
-    needs: build-docker-images
+    needs: build
     runs-on: ubuntu-latest
     steps:
-      - name: Deploy to EC2
+      - name: Verify SSH connection
         uses: appleboy/ssh-action@master
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USERNAME }}
           key: ${{ secrets.EC2_SSH_KEY }}
           timeout: "120s"
+          script: |
+            echo "SSH connection successful"
+            echo "Running as user: $(whoami)"
+            echo "Current directory: $(pwd)"
+
+      - name: Deploy to EC2
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USERNAME }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          timeout: "180s"
+          command_timeout: "20m"
           script: |
             # สร้างโฟลเดอร์ถ้ายังไม่มี
             mkdir -p ~/easyroom-deployment
@@ -144,9 +155,35 @@ jobs:
                 driver: bridge
             EOL
 
-            # รัน docker-compose
+            echo "Creating wait-for-it.sh script"
+            cat > wait-for-it.sh << 'EOL'
+            #!/bin/sh
+            # Simple wait-for-it script
+
+            set -e
+
+            host="$1"
+            shift
+            cmd="$@"
+
+            until nc -z -v -w5 ${host%%:*} ${host##*:}; do
+              echo "⏳ รอให้ $host พร้อมให้บริการ..."
+              sleep 5
+            done
+
+            echo "✅ $host พร้อมให้บริการแล้ว กำลังดำเนินการคำสั่งต่อไป..."
+            exec $cmd
+            EOL
+
+            chmod +x wait-for-it.sh
+
+            echo "Pulling Docker images"
             docker-compose pull
+
+            echo "Stopping existing containers"
             docker-compose down || true
+
+            echo "Starting services"
             docker-compose up -d
 
             echo "Deployment completed!"
