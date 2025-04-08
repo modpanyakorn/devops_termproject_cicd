@@ -1,0 +1,22 @@
+name: Check EC2 Connection
+
+on:
+  workflow_dispatch: # ทำให้สามารถรันผ่าน GitHub UI ได้โดยตรง
+
+jobs:
+  check-connection:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify SSH connection to EC2
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USERNAME }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          timeout: "30s"
+          script: |
+            echo "SSH connection successful!"
+            echo "Running as user: $(whoami)"
+            echo "Current directory: $(pwd)"
+            echo "Instance hostname: $(hostname)"
+            echo "OS Info: $(cat /etc/os-release | grep PRETTY_NAME)"
