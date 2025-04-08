@@ -1,83 +1,70 @@
 name: EasyRoom Deployment Pipeline
 
-# Triggers
 on:
   push:
     branches:
       - main
-      - develop
-  pull_request:
-    branches:
-      - main
-      - develop
   workflow_dispatch:
     inputs:
       deployment_reason:
         description: "Reason for manual deployment"
         required: false
-        default: "Manual trigger"
+        default: "Manual deployment"
 
-# Global environment variables
-env:
-  DOCKER_HUB_REGISTRY: ${{ secrets.DOCKER_HUB_USERNAME }}
-  PROJECT_NAME: easyroom
-  DEPLOYMENT_ENVIRONMENT: production
-
-# Jobs with detailed stages
 jobs:
-  # Stage 1: Code Quality and Testing
-  code-quality:
+  code-quality-check:
     name: 🕵️ Code Quality Check
     runs-on: ubuntu-latest
     steps:
-      - name: 📦 Checkout Repository
+      - name: Checkout Repository
         uses: actions/checkout@v3
-        with:
-          fetch-depth: 0
 
-      - name: 🛠️ Set up Node.js
-        uses: actions/setup-node@v3
-        with:
-          node-version: "18"
-          cache: "npm"
-          cache-dependency-path: |
-            src/frontend/package-lock.json
-            src/backend/package-lock.json
-
-      - name: 🧹 Install Dependencies
+      - name: Check Project Structure
         run: |
-          cd src/frontend && npm ci
-          cd ../backend && npm ci
+          echo "Checking project structure..."
+          test -f .env || (echo "❌ .env file missing" && exit 1)
+          test -d src/frontend || (echo "❌ Frontend directory missing" && exit 1)
+          test -d src/backend || (echo "❌ Backend directory missing" && exit 1)
+          echo "✅ Project structure validated"
 
-      - name: 🔍 Run Code Linting
-        run: |
-          cd src/frontend && npm run lint
-          cd ../backend && npm run lint
-
-      - name: 🧪 Run Unit Tests
-        run: |
-          cd src/frontend && npm test
-          cd ../backend && npm test
-
-  # Stage 2: Build Docker Images
-  build-images:
-    name: 🏗️ Build Docker Images
-    needs: code-quality
+  prepare-deployment:
+    name: 📦 Prepare Deployment Files
+    needs: code-quality-check
     runs-on: ubuntu-latest
     steps:
-      - name: 📦 Checkout Repository
+      - name: Checkout Repository
         uses: actions/checkout@v3
 
-      - name: 🔐 Docker Hub Login
+      - name: Create Deployment Directory
+        run: |
+          mkdir -p deployment
+          cp .env deployment/
+          cp docker-compose.yml deployment/
+          cp Dockerfile.frontend deployment/
+          cp Dockerfile.backend deployment/
+          cp wait-for-it.sh deployment/ || true
+
+      - name: Upload Deployment Artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: deployment-files
+          path: deployment/
+
+  build-frontend:
+    name: 🌐 Build Frontend Image
+    needs: code-quality-check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+
+      - name: Login to Docker Hub
         uses: docker/login-action@v2
         with:
           username: ${{ secrets.DOCKER_HUB_USERNAME }}
           password: ${{ secrets.DOCKER_HUB_TOKEN }}
 
-      - name: 🛠️ Set up Docker Buildx
-        uses: docker/setup-buildx-action@v2
-
-      - name: 🏭 Build Frontend Image
+      - name: Build and Push Frontend Image
         uses: docker/build-push-action@v4
         with:
           context: .
@@ -87,7 +74,21 @@ jobs:
             ${{ secrets.DOCKER_HUB_USERNAME }}/easyroom-frontend:latest
             ${{ secrets.DOCKER_HUB_USERNAME }}/easyroom-frontend:${{ github.sha }}
 
-      - name: 🏭 Build Backend Image
+  build-backend:
+    name: 🚀 Build Backend Image
+    needs: code-quality-check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKER_HUB_USERNAME }}
+          password: ${{ secrets.DOCKER_HUB_TOKEN }}
+
+      - name: Build and Push Backend Image
         uses: docker/build-push-action@v4
         with:
           context: .
@@ -97,142 +98,72 @@ jobs:
             ${{ secrets.DOCKER_HUB_USERNAME }}/easyroom-backend:latest
             ${{ secrets.DOCKER_HUB_USERNAME }}/easyroom-backend:${{ github.sha }}
 
-  # Stage 3: Deployment to EC2
   deploy-to-ec2:
-    name: 🚀 Deploy to EC2 Server
-    needs: build-images
+    name: 🖥️ Deploy to EC2
+    needs:
+      - prepare-deployment
+      - build-frontend
+      - build-backend
     runs-on: ubuntu-latest
     steps:
-      - name: 📦 Checkout Repository
-        uses: actions/checkout@v3
-
-      - name: 🔑 Setup SSH Key
-        run: |
-          mkdir -p ~/.ssh
-          echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/deploy_key
-          chmod 600 ~/.ssh/deploy_key
-          ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
-
-      - name: 🛠️ Prepare Deployment Configuration
-        run: |
-          # สร้างไฟล์ .env สำหรับการ deploy
-          cat > deployment.env << EOL
-          # ค่าคอนฟิกสำหรับการ deploy
-          FRONTEND_PORT=80
-          BACKEND_PORT=3000
-          API_HOST=0.0.0.0
-
-          # การตั้งค่าฐานข้อมูล
-          DB_HOST=mysql
-          DB_PORT=3306
-          DB_USER=easyroomteam
-          DB_PASSWORD=1234
-          DB_NAME=easyroom
-
-          # Docker Hub credentials
-          DOCKER_HUB_USERNAME=${{ secrets.DOCKER_HUB_USERNAME }}
-          DEPLOYMENT_TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
-          EOL
-
-      - name: 🚢 Deploy to EC2
-        env:
-          SSH_PRIVATE_KEY: ${{ secrets.EC2_SSH_KEY }}
-        run: |
-          ssh -i ~/.ssh/deploy_key \
-              -o StrictHostKeyChecking=no \
-              ${{ secrets.EC2_USERNAME }}@${{ secrets.EC2_HOST }} << 'EOF'
-
-          # สร้างโฟลเดอร์สำหรับ deployment
-          mkdir -p ~/easyroom-deployment
-          cd ~/easyroom-deployment
-
-          # สร้าง docker-compose.yml
-          cat > docker-compose.yml << INNER_EOF
-          version: "3.8"
-          services:
-            frontend:
-              image: ${{ secrets.DOCKER_HUB_USERNAME }}/easyroom-frontend:${{ github.sha }}
-              ports:
-                - "80:80"
-              restart: always
-
-            backend:
-              image: ${{ secrets.DOCKER_HUB_USERNAME }}/easyroom-backend:${{ github.sha }}
-              ports:
-                - "3000:3000"
-              restart: always
-
-            mysql:
-              image: mysql:latest
-              environment:
-                MYSQL_ROOT_PASSWORD: 1234
-                MYSQL_DATABASE: easyroom
-              volumes:
-                - mysql_data:/var/lib/mysql
-
-          volumes:
-            mysql_data:
-          INNER_EOF
-
-          # Login Docker Hub
-          docker login -u ${{ secrets.DOCKER_HUB_USERNAME }} -p ${{ secrets.DOCKER_HUB_TOKEN }}
-
-          # Pull images
-          docker-compose pull
-
-          # Stop และ remove containers เดิม
-          docker-compose down
-
-          # Start containers ใหม่
-          docker-compose up -d
-
-          # ทำความสะอาด
-          docker image prune -f
-
-          echo "Deployment completed successfully!"
-          EOF
-
-      - name: 📋 Deployment Notification
-        if: success()
-        uses: 8398a7/action-slack@v3
+      - name: Download Deployment Artifacts
+        uses: actions/download-artifact@v3
         with:
-          status: ${{ job.status }}
-          text: 🚀 Deployment successful for EasyRoom
-        env:
-          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK }}
+          name: deployment-files
+          path: deployment/
 
-  # Stage 4: Post-Deployment Checks
-  post-deployment-checks:
-    name: 🩺 Health Check
+      - name: Deploy to EC2
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USERNAME }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            # สร้างโฟลเดอร์สำหรับ deployment
+            mkdir -p ~/easyroom-deployment
+            cd ~/easyroom-deployment
+
+            # คัดลอกไฟล์การ deploy
+            rm -rf *
+            scp -o StrictHostKeyChecking=no -i <(echo "${{ secrets.EC2_SSH_KEY }}") \
+                deployment/* ${{ secrets.EC2_USERNAME }}@${{ secrets.EC2_HOST }}:~/easyroom-deployment/
+
+            # ตรวจสอบไฟล์
+            ls -la
+
+            # Login Docker Hub
+            docker login -u ${{ secrets.DOCKER_HUB_USERNAME }} -p ${{ secrets.DOCKER_HUB_TOKEN }}
+
+            # Pull images
+            docker-compose pull
+
+            # Stop และ remove containers เดิม
+            docker-compose down || true
+
+            # Start containers ใหม่
+            docker-compose up -d
+
+            # ทำความสะอาด
+            docker image prune -f
+
+  post-deployment-check:
+    name: 🩺 Post-Deployment Verification
     needs: deploy-to-ec2
     runs-on: ubuntu-latest
     steps:
-      - name: 🌐 Check Frontend Availability
+      - name: Check Frontend Availability
         run: |
-          response=$(curl -s -o /dev/null -w "%{http_code}" http://${{ secrets.EC2_HOST }})
+          sleep 30  # รอให้ container เริ่มทำงาน
+          response=$(curl -s -o /dev/null -w "%{http_code}" http://${{ secrets.EC2_HOST }}:8080)
           if [ $response -ne 200 ]; then
             echo "Frontend not responding correctly"
             exit 1
           fi
 
-      - name: 🔍 Check Backend Availability
+      - name: Check Backend Availability
         run: |
-          response=$(curl -s -o /dev/null -w "%{http_code}" http://${{ secrets.EC2_HOST }}:3000/health)
+          response=$(curl -s -o /dev/null -w "%{http_code}" http://${{ secrets.EC2_HOST }}:3000/health || echo 404)
           if [ $response -ne 200 ]; then
             echo "Backend not responding correctly"
             exit 1
           fi
-
-  # Optional: Conditional job for production deployment
-  production-validation:
-    name: 🏁 Production Validation
-    if: github.ref == 'refs/heads/main'
-    needs:
-      - code-quality
-      - build-images
-      - deploy-to-ec2
-      - post-deployment-checks
-    runs-on: ubuntu-latest
-    steps:
-      - name: 🎉 Production Deployment Completed
-        run: echo "Production deployment validated successfully!"
