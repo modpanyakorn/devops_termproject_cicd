@@ -160,13 +160,13 @@ jobs:
           path: .env.prod
 
       - name: Upload docker-compose.prod.yml as artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: docker-compose-file
           path: docker-compose.prod.yml
 
       - name: Upload database file as artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: db-file
           path: easyroom.sql
@@ -177,17 +177,17 @@ jobs:
     needs: [prepare-deployment]
     steps:
       - name: Download .env.prod artifact
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: env-file
 
       - name: Download docker-compose.prod.yml artifact
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: docker-compose-file
 
       - name: Download database file artifact
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: db-file
 
