@@ -7,6 +7,10 @@ jobs:
   check-connection:
     runs-on: ubuntu-latest
     steps:
+      - name: Check IP address
+        run: |
+          curl -s https://ifconfig.me
+          echo "Current GitHub runner IP is: $(curl -s https://ifconfig.me)"
       - name: Verify SSH connection to EC2
         uses: appleboy/ssh-action@master
         with:
