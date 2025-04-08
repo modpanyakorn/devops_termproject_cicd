@@ -2,12 +2,17 @@ FROM node:18-alpine
 
 WORKDIR /app
 
-COPY src/backend/package*.json ./
+# ติดตั้ง bash เพื่อใช้กับ wait-for-it
+RUN apk add --no-cache bash curl
 
+# Copy ไฟล์ backend
+COPY src/backend/package*.json ./
 RUN npm install
 
 COPY src/backend/ ./
+COPY wait-for-it.sh ./
+RUN chmod +x wait-for-it.sh
 
 EXPOSE 3000
 
-CMD ["npm", "start"]
+CMD ["./wait-for-it.sh", "mysql:3306", "--", "node", "server.js"]
