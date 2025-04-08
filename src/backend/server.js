@@ -7,6 +7,8 @@ const fs = require("fs");
 const session = require("express-session");
 const http = require("http");
 const { Server } = require("socket.io");
+const cron = require("node-cron");
+const { autoExpireRequests } = require("./auto_status_expired");
 
 const app = express();
 const server = http.createServer(app);
@@ -17,17 +19,45 @@ const io = new Server(server, {
     credentials: true,
   },
 });
+//Auto update status
+cron.schedule("*/30 * * * * *", async () => {
+  //ปรับเวลาตรงนี้นะ :)
+  console.log("⏰ Running autoExpireRequests...");
+  await autoExpireRequests();
+});
 
 // Middleware
 app.use(
   cors({
-    origin: ["http://localhost:5501", "http://localhost:3000"],
+    // ยอมรับทั้ง localhost และ domain อื่นๆ
+    origin: function (origin, callback) {
+      // ยอมรับทั้งในกรณี origin ไม่ถูกส่งมา (เช่น Postman) และใน production
+      const allowedOrigins = [
+        "http://localhost:5501",
+        "http://localhost:3000",
+        "http://localhost:8080",
+      ];
+
+      // ถ้าเป็น production จะมี origin เช่น http://EC2_IP_ADDRESS
+      // ถ้า origin ไม่มี หรือ เป็น origin ที่ยอมรับ หรือ ไม่ใช่ localhost
+      if (
+        !origin ||
+        allowedOrigins.indexOf(origin) !== -1 ||
+        !origin.includes("localhost")
+      ) {
+        callback(null, true);
+      } else {
+        callback(new Error("Not allowed by CORS"));
+      }
+    },
     credentials: true,
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],
   })
 );
+
 app.use(express.json());
+
 app.use(
   session({
     secret: "supersecretkey",
@@ -54,7 +84,6 @@ app.use("/storage/equipment_img", express.static(uploadDir));
 // Routes
 app.use("/auth", require("./core/auth/auth.routes"));
 app.use("/booker", require("./modules/booker/booker.routes"));
-app.use("/admin", require("./modules/admin/admin.routes"));
 
 // list endpoints
 console.log("📚 API Endpoints:");

@@ -3,8 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>แบบบันทึกขอใช้ห้องนอกเวลา</title>
-
+    <title>แบบบันทึกขอใช้ห้องในเวลา (TimeIn)</title>
     <!-- Bootstrap CSS -->
     <link
       href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css"
@@ -27,6 +26,7 @@
 
       .form-label {
         display: block;
+        /* ทำให้ label ขึ้นบรรทัดใหม่ */
         font-weight: bold;
       }
 
@@ -199,37 +199,6 @@
         margin-bottom: 10px;
         text-align: center;
       }
-
-      .btn-add-row {
-        font-size: 24px;
-        width: 40px;
-        height: 40px;
-        line-height: 40px;
-        border-radius: 50%;
-        background-color: #28a745;
-        color: white;
-        border: none;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        cursor: pointer;
-        transition: 0.3s;
-      }
-
-      .btn-add-row:hover {
-        background-color: #218838;
-        transform: scale(1.1);
-      }
-
-      th.text-center {
-        vertical-align: middle !important;
-      }
-
-      .d-flex {
-        display: flex;
-        justify-content: center;
-        align-items: center;
-      }
     </style>
   </head>
 
@@ -239,173 +208,121 @@
 
     <!-- Sidebar -->
     <div class="sidebar" id="sidebar">
-      <div class="radio-container">
-        <h4>ประเภทการจอง</h4>
-        <label>
-          <input type="radio" name="booking-type" value="นอกเวลา" checked />
-          นอกเวลา
-        </label>
-        <br />
-        <label>
-          <input type="radio" name="booking-type" value="ในเวลา" />
-          ในเวลา
-        </label>
-      </div>
+      <h4>ประเภทการจอง</h4>
+      <label>
+        <input
+          type="radio"
+          name="booking-type"
+          value="นอกเวลา"
+          onchange="updateStatus('นอกเวลา')"
+          checked
+        />
+        นอกเวลา </label
+      ><br />
+      <label>
+        <input
+          type="radio"
+          name="booking-type"
+          value="ในเวลา"
+          onchange="updateStatus('ในเวลา')"
+        />
+        ในเวลา
+      </label>
     </div>
 
     <!-- Overlay -->
-    <div class="overlay" id="overlay" onclick="toggleSidebar()"></div>
+    <div class="overlay" id="overlay" onclick="closeSidebarOrModal()"></div>
 
-    <!-- Content -->
+    <!-- Modal -->
+    <div class="modal" id="modal">
+      <h5>ยืมอุปกรณ์ ห้อง SC2-308</h5>
+      <table class="table table-bordered">
+        <thead>
+          <tr>
+            <th>ชื่ออุปกรณ์</th>
+            <th>จำนวน</th>
+          </tr>
+        </thead>
+      </table>
+      <button type="button" class="btn-confirm" onclick="saveData()">
+        บันทึก
+      </button>
+    </div>
+
     <div class="container mt-4">
       <h4 class="form-title">แบบบันทึกขอใช้ห้องนอกเวลา</h4>
       <form method="GET" action="submit_booking.php">
-        <!-- ข้อมูลส่วนตัว -->
-        <div class="form-container">
-          <div class="row mb-3">
-            <div class="col-md-6">
-              <label class="form-label">ชื่อ-นามสกุล</label>
-              <input
-                type="text"
-                class="form-control"
-                id="student-name"
-                value="กำลังโหลด..."
-                readonly
-              />
-            </div>
-            <div class="col-md-6">
-              <label class="form-label">รหัสนิสิต</label>
-              <input
-                type="text"
-                class="form-control"
-                id="student-id"
-                value="กำลังโหลด..."
-                readonly
-              />
-            </div>
+        <!-- กำหนด action เป็นที่ที่ข้อมูลจะถูกส่งไปxxxxxxxx<form>xxxxxxxxxxxxxxxxxxxxxx -->
+        <div class="row mb-3">
+          <div class="col-md-6">
+            <label class="form-label">ชื่อ-นามสกุล</label>
+            <input
+              type="text"
+              class="form-control"
+              id="teacher-name"
+              value="กำลังโหลด..."
+              readonly
+            />
           </div>
-          <div class="row mb-3">
-            <div class="col-md-4">
-              <label for="stud-year" class="form-label">ชั้นปี</label>
-              <input
-                type="text"
-                class="form-control"
-                id="stud-year"
-                value="กำลังโหลด..."
-                readonly
-              />
-            </div>
-            <div class="col-md-4">
-              <label for="phone-number" class="form-label">เบอร์โทร</label>
-              <input
-                type="text"
-                class="form-control"
-                id="phone-number"
-                value="กำลังโหลด..."
-                readonly
-              />
-            </div>
+          <div class="col-md-6">
+            <label class="form-label">เบอร์โทร</label>
+            <input
+              type="text"
+              class="form-control"
+              id="phone-number"
+              value="กำลังโหลด..."
+              readonly
+            />
           </div>
         </div>
-
-        <!-- ตารางรายละเอียดการจอง -->
-        <h5 class="mt-4">รายละเอียดการจอง</h5>
+        <div class="row-header">
+          <h5>รายละเอียดการจอง</h5>
+        </div>
         <table class="table table-bordered">
           <thead>
             <tr>
               <th>ประเภทห้อง</th>
               <th>ห้องที่จอง</th>
+              <th>วันที่จอง</th>
               <th>เวลาที่จอง</th>
             </tr>
           </thead>
           <tbody>
             <tr>
-              <td id="room-type-info">ไม่พบข้อมูล</td>
-              <td id="room-info">ไม่พบข้อมูล</td>
-              <td id="time-range-info">ไม่พบข้อมูล</td>
+              <td id="room-type-info">กำลังโหลด...</td>
+              <td id="room-info">กำลังโหลด...</td>
+              <td id="booking-date-info">กำลังโหลด...</td>
+              <td id="time-range-info">กำลังโหลด...</td>
             </tr>
           </tbody>
         </table>
-        <!-- แสดงคอมพิวเตอร์ที่เลือก -->
+        <div class="row-header">
+          <h5 class="mt-4">รายละเอียดการยืม</h5>
+          <button type="button" class="btn-add" onclick="openModal()">+</button>
+        </div>
+        <table class="table table-bordered">
+          <thead>
+            <tr>
+              <th>ชื่ออุปกรณ์</th>
+              <th>จำนวน</th>
+            </tr>
+          </thead>
+          <tbody id="equipment-table-body">
+            <!-- อุปกรณ์จะถูกโหลดที่นี่ -->
+          </tbody>
+        </table>
         <h5>รายละเอียดการยืม (คอมพิวเตอร์ที่เลือก)</h5>
         <table class="table table-bordered">
           <thead>
             <tr>
-              <th>แถว</th>
               <th>คอมพิวเตอร์ที่จอง</th>
+              <th>ห้องที่จอง</th>
             </tr>
           </thead>
           <tbody id="computer-table-body">
             <!-- รายการคอมพิวเตอร์จะแสดงที่นี่ -->
           </tbody>
         </table>
-        <!-- ตารางรายชื่อสมาชิก -->
-        <h5 class="mt-4">รายชื่อสมาชิก</h5>
-        <table class="table table-bordered">
-          <thead>
-            <tr>
-              <th>รหัสนิสิต</th>
-              <th>ชื่อ-นามสกุล</th>
-              <th class="text-center">
-                <div class="d-flex justify-content-center align-items-center">
-                  <button type="button" class="btn-add-row" onclick="addRow()">
-                    +
-                  </button>
-                </div>
-              </th>
-            </tr>
-          </thead>
-          <tbody id="members-table-body">
-            <tr>
-              <td style="position: relative">
-                <input
-                  type="text"
-                  class="form-control student-id-input"
-                  placeholder="กรอกรหัสนิสิต"
-                  pattern="\\d*"
-                  title="กรุณากรอกเฉพาะตัวเลข"
-                />
-                <div class="dropdown-list"></div>
-              </td>
-              <td>
-                <input
-                  type="text"
-                  class="form-control student-name-input"
-                  placeholder="กรอกชื่อ-นามสกุล"
-                  readonly
-                />
-              </td>
-              <td>
-                <button
-                  type="button"
-                  class="btn btn-danger"
-                  onclick="deleteRow(this)"
-                >
-                  ลบ
-                </button>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-
-        <!-- ตารางรายละเอียดการยืม (อุปกรณ์เพิ่มเติม) -->
-        <h5 class="mt-4">รายละเอียดการยืม (อุปกรณ์เพิ่มเติม)</h5>
-        <table class="table table-bordered">
-          <thead>
-            <tr>
-              <th>ชื่ออุปกรณ์</th>
-              <th>ห้องที่จอง</th>
-              <th>จำนวน</th>
-            </tr>
-          </thead>
-          <tbody id="equipment-table-body">
-            <tr>
-              <td colspan="3">ไม่มีรายการยืมอุปกรณ์</td>
-            </tr>
-          </tbody>
-        </table>
-
-        <!-- ความประสงค์การใช้ห้อง -->
         <div class="textarea-container">
           <label class="form-label">ความประสงค์การใช้ห้อง</label>
           <div class="textarea-row">
@@ -446,27 +363,33 @@
               placeholder="กรอกรายละเอียดเพิ่มเติมที่นี่..."
             ></textarea>
           </div>
+          <!-- <button
+                class="btn-confirm"
+                type="button"
+                style="margin-left: auto; display: block"
+                onclick="submitBooking(); window.location.href='home.html'"
+              >
+                ยืนยัน
+              </button> -->
           <button
             class="btn-confirm"
             type="button"
             style="margin-left: auto; display: block"
-            onclick="submitBookingOut()"
+            onclick="submitBookingA()"
           >
             ยืนยัน
           </button>
         </div>
-
-        <!-- หมายเหตุ -->
         <p class="note">
-          การจองขอใช้ห้องภายใต้การดูแลของภาควิชาวิทยาการคอมพิวเตอร์ฯ
-          คณะวิทยาศาสตร์ มหาวิทยาลัยนเรศวร วันเสาร์ ถึง อาทิตย์ เวลา 8.00-21.00
-          น.
+          หมายเหตุ: การจองขอใช้ห้องภายใต้การดูแลของภาควิชาวิทยาการคอมพิวเตอร์ฯ
+          คณะวิทยาศาสตร์ มหาวิทยาลัยนเรศวร วันจันทร์ ถึง ศุกร์ เวลา 8.00 - 17.00
+          น. ยกเว้นวันหยุดนักขัตฤกษ์
         </p>
       </form>
     </div>
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <script src="../script/config.js"></script>
     <script src="../script/auth.js"></script>
-    <script src="script/TimeOut.js"></script>
+    <script src="script/TimeOutTeacher.js"></script>
   </body>
 </html>
