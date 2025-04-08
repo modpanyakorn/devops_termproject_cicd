@@ -9,7 +9,6 @@ RUN apk add --no-cache bash netcat-openbsd
 COPY src/backend/package*.json ./
 RUN npm install
 
-COPY src/backend/.env .env  
 COPY src/backend/ ./
 COPY wait-for-it.sh ./ 
 RUN chmod +x wait-for-it.sh
