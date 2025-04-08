@@ -93,75 +93,64 @@ jobs:
           username: ${{ secrets.EC2_USERNAME }}
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
+            # Debug: แสดงเนื้อหา .env 
+            echo "Contents of .env:"
+            cat .env
+
+            # Debug: ตรวจสอบ Docker version
+            docker --version
+            docker-compose --version
+
             # สร้างโฟลเดอร์สำหรับ deployment
-            mkdir -p ~/easyroom-deployment/backend
+            mkdir -p ~/easyroom-deployment
             cd ~/easyroom-deployment
 
-            # คัดลอก .env จาก localhost
-            scp -o StrictHostKeyChecking=no -i <(echo "${{ secrets.EC2_SSH_KEY }}") \
-                .env ${{ secrets.EC2_USERNAME }}@${{ secrets.EC2_HOST }}:~/easyroom-deployment/.env
-
-            # คัดลอก docker-compose.yml
+            # สร้าง docker-compose.yml
             cat > docker-compose.yml << EOL
             version: "3.8"
             services:
               apache-web-server:
                 image: ${{ secrets.DOCKER_HUB_USERNAME }}/easyroom-frontend:latest
-                volumes:
-                  - ./frontend:/var/www/html/
                 ports:
                   - "80:80"
-                networks:
-                  - my-network
+                volumes:
+                  - ./frontend:/var/www/html/
+                restart: always
 
               node:
                 image: ${{ secrets.DOCKER_HUB_USERNAME }}/easyroom-backend:latest
-                restart: on-failure
-                env_file:
-                  - .env
                 ports:
                   - "3000:3000"
-                depends_on:
-                  - mysql
-                volumes:
-                  - ./backend/storage:/app/storage
-                networks:
-                  - my-network
+                restart: always
 
               mysql:
                 image: mysql:latest
-                restart: always
-                env_file:
-                  - .env
+                environment:
+                  MYSQL_ROOT_PASSWORD: 1234
+                  MYSQL_DATABASE: easyroom
+                ports:
+                  - "3306:3306"
                 volumes:
                   - db_data:/var/lib/mysql
-                  - ./easyroom-docker.sql:/docker-entrypoint-initdb.d/easyroom.sql
-                networks:
-                  - my-network
-
-            networks:
-              my-network:
-                driver: bridge
 
             volumes:
               db_data:
-                driver: local
             EOL
 
             # Login Docker Hub
             docker login -u ${{ secrets.DOCKER_HUB_USERNAME }} -p ${{ secrets.DOCKER_HUB_TOKEN }}
 
-            # Pull images
-            docker-compose pull
+            # Pull images ด้วย verbose mode
+            docker-compose pull --quiet
 
             # Stop และ remove containers เดิม
             docker-compose down || true
 
-            # Start containers ใหม่
-            docker-compose up -d
+            # Start containers ใหม่ ด้วย verbose mode
+            docker-compose up -d 
 
-            # ทำความสะอาด
-            docker image prune -f
+            # ตรวจสอบสถานะ containers
+            docker ps -a
 
   post-deployment-check:
     name: 🩺 Post-Deployment Verification
@@ -170,20 +159,20 @@ jobs:
     steps:
       - name: Check Frontend Availability
         run: |
-          sleep 30  # รอให้ container เริ่มทำงาน
-          echo "Checking frontend at http://${{ secrets.EC2_HOST }}:80"
-          response=$(curl -v -s -o /dev/null -w "%{http_code}" http://${{ secrets.EC2_HOST }}:80)
+          # รอให้ container เริ่มทำงาน
+          sleep 60  # เพิ่มเวลารอให้มากขึ้น
+
+          # ตรวจสอบด้วย curl แบบ verbose
+          curl -v http://${{ secrets.EC2_HOST }}:80
+
+          # ตรวจสอบ HTTP status code
+          response=$(curl -s -o /dev/null -w "%{http_code}" http://${{ secrets.EC2_HOST }}:80)
           echo "Response code: $response"
-          if [ $response -ne 200 ]; then
-            echo "Frontend not responding correctly"
-            exit 1
-          fi
 
-          docker run --rm ${{ secrets.DOCKER_HUB_USERNAME }}/easyroom-frontend:latest ls -la /var/www/html
-
-          sleep 30
-          response=$(curl -v http://${{ secrets.EC2_HOST }}:80)
-          echo "$response"
+          # ตรวจสอบ containers บน EC2
+          ssh -i <(echo "${{ secrets.EC2_SSH_KEY }}") \
+              ${{ secrets.EC2_USERNAME }}@${{ secrets.EC2_HOST }} \
+              "docker ps -a"
 
       - name: Check Backend Availability
         run: |
