@@ -93,6 +93,10 @@ jobs:
           username: ${{ secrets.EC2_USERNAME }}
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
+            # ติดตั้ง Docker Compose
+            sudo curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+            sudo chmod +x /usr/local/bin/docker-compose
+
             # สร้างโฟลเดอร์
             mkdir -p ~/easyroom-deployment
             cd ~/easyroom-deployment
@@ -110,17 +114,55 @@ jobs:
 
             # สร้าง docker-compose.yml
             cat > docker-compose.yml << EOL
-            # ใช้ docker-compose.yml ที่แนะนำข้างบน
+            version: "3.8"
+            services:
+              apache-web-server:
+                image: ${{ secrets.DOCKER_HUB_USERNAME }}/easyroom-frontend:latest
+                ports:
+                  - "80:80"
+                volumes:
+                  - ./frontend:/var/www/html/
+                restart: always
+
+              node:
+                image: ${{ secrets.DOCKER_HUB_USERNAME }}/easyroom-backend:latest
+                ports:
+                  - "3000:3000"
+                restart: always
+                environment:
+                  - DB_HOST=mysql
+
+              mysql:
+                image: mysql:latest
+                environment:
+                  MYSQL_ROOT_PASSWORD: 1234
+                  MYSQL_DATABASE: easyroom
+                  MYSQL_USER: easyroomteam
+                  MYSQL_PASSWORD: 1234
+                ports:
+                  - "3306:3306"
+                volumes:
+                  - db_data:/var/lib/mysql
+
+            volumes:
+              db_data:
             EOL
 
-            # Deploy
-            docker-compose down
+            # Login Docker Hub
+            docker login -u ${{ secrets.DOCKER_HUB_USERNAME }} -p ${{ secrets.DOCKER_HUB_TOKEN }}
+
+            # Pull images
             docker-compose pull
+
+            # Stop และ remove containers เดิม
+            docker-compose down || true
+
+            # Start containers ใหม่
             docker-compose up -d
 
-            # ตรวจสอบ
+            # ตรวจสอบสถานะ
             docker-compose ps
-            docker logs easyroom-deployment-node-1
+            docker logs easyroom-deployment-node-1 || true
 
   post-deployment-check:
     name: 🩺 Post-Deployment Verification
