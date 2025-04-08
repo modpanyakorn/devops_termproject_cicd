@@ -179,6 +179,12 @@ jobs:
             exit 1
           fi
 
+          docker run --rm ${{ secrets.DOCKER_HUB_USERNAME }}/easyroom-frontend:latest ls -la /var/www/html
+
+          sleep 30
+          response=$(curl -v http://${{ secrets.EC2_HOST }}:80)
+          echo "$response"
+
       - name: Check Backend Availability
         run: |
           response=$(curl -s -o /dev/null -w "%{http_code}" http://${{ secrets.EC2_HOST }}:3000/health || echo 404)

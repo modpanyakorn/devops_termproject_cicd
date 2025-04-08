@@ -2,16 +2,25 @@ FROM php:8.0-apache
 RUN docker-php-ext-install mysqli && docker-php-ext-enable mysqli
 RUN apt-get update && apt-get upgrade -y
 
-# Debug: แสดงไฟล์ที่จะ copy
-RUN ls -la src/frontend
-
-# COPY ด้วย full path
-COPY ./src/frontend/index.html /var/www/html/index.html
-COPY ./src/frontend/ /var/www/html/
-
-# เปิด mod_rewrite
+# เปิด mod_rewrite สำหรับ routing
 RUN a2enmod rewrite
 
-# แก้ permission
-RUN chown -R www-data:www-data /var/www/html
-RUN chmod -R 755 /var/www/html
+# Copy ไฟล์ frontend
+COPY ./src/frontend/ /var/www/html/
+
+# แก้ไข Apache configuration
+RUN sed -i 's/AllowOverride None/AllowOverride All/g' /etc/apache2/apache2.conf
+
+# สร้าง .htaccess สำหรับ routing
+RUN echo '<IfModule mod_rewrite.c>\n\
+    RewriteEngine On\n\
+    RewriteBase /\n\
+    RewriteRule ^index\.html$ - [L]\n\
+    RewriteCond %{REQUEST_FILENAME} !-f\n\
+    RewriteCond %{REQUEST_FILENAME} !-d\n\
+    RewriteRule . /index.html [L]\n\
+    </IfModule>' > /var/www/html/.htaccess
+
+# ตั้งค่า permissions
+RUN chown -R www-data:www-data /var/www/html \
+    && chmod -R 755 /var/www/html
