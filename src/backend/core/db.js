@@ -4,7 +4,7 @@ require("dotenv").config();
 // สร้างฟังก์ชันสำหรับลองเชื่อมต่อซ้ำ
 const createConnection = () => {
   const connection = mysql.createConnection({
-    host: process.env.DB_HOST,
+    host: process.env.DB_HOST || "mysql",
     user: process.env.DB_USER,
     password: process.env.DB_PASSWORD,
     database: process.env.DB_NAME,
