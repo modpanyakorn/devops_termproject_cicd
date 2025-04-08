@@ -93,64 +93,34 @@ jobs:
           username: ${{ secrets.EC2_USERNAME }}
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
-            # Debug: แสดงเนื้อหา .env 
-            echo "Contents of .env:"
-            cat .env
-
-            # Debug: ตรวจสอบ Docker version
-            docker --version
-            docker-compose --version
-
-            # สร้างโฟลเดอร์สำหรับ deployment
+            # สร้างโฟลเดอร์
             mkdir -p ~/easyroom-deployment
             cd ~/easyroom-deployment
 
-            # สร้าง docker-compose.yml
-            cat > docker-compose.yml << EOL
-            version: "3.8"
-            services:
-              apache-web-server:
-                image: ${{ secrets.DOCKER_HUB_USERNAME }}/easyroom-frontend:latest
-                ports:
-                  - "80:80"
-                volumes:
-                  - ./frontend:/var/www/html/
-                restart: always
-
-              node:
-                image: ${{ secrets.DOCKER_HUB_USERNAME }}/easyroom-backend:latest
-                ports:
-                  - "3000:3000"
-                restart: always
-
-              mysql:
-                image: mysql:latest
-                environment:
-                  MYSQL_ROOT_PASSWORD: 1234
-                  MYSQL_DATABASE: easyroom
-                ports:
-                  - "3306:3306"
-                volumes:
-                  - db_data:/var/lib/mysql
-
-            volumes:
-              db_data:
+            # สร้าง .env 
+            cat > .env << EOL
+            DB_HOST=mysql
+            DB_PORT=3306
+            DB_USER=easyroomteam
+            DB_PASSWORD=1234
+            DB_NAME=easyroom
+            API_HOST=0.0.0.0
+            API_PORT=3000
             EOL
 
-            # Login Docker Hub
-            docker login -u ${{ secrets.DOCKER_HUB_USERNAME }} -p ${{ secrets.DOCKER_HUB_TOKEN }}
+            # สร้าง docker-compose.yml
+            cat > docker-compose.yml << EOL
+            # ใช้ docker-compose.yml ที่แนะนำข้างบน
+            EOL
 
-            # Pull images ด้วย verbose mode
-            docker-compose pull --quiet
+            # Deploy
+            docker-compose down
+            docker-compose pull
+            docker-compose up -d
 
-            # Stop และ remove containers เดิม
-            docker-compose down || true
-
-            # Start containers ใหม่ ด้วย verbose mode
-            docker-compose up -d 
-
-            # ตรวจสอบสถานะ containers
-            docker ps -a
+            # ตรวจสอบ
+            docker-compose ps
+            docker logs easyroom-deployment-node-1
 
   post-deployment-check:
     name: 🩺 Post-Deployment Verification
