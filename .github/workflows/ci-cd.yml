@@ -154,7 +154,7 @@ jobs:
           EOL
 
       - name: Upload .env.prod as artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: env-file
           path: .env.prod
