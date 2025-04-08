@@ -2,3 +2,6 @@ src/backend/node_modules
 easyroom.sql
 .env
 src/backend/.env
+Docker-backend.txt
+Docker-frontend.txt
+.env.txt
