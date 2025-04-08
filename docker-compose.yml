@@ -26,6 +26,7 @@ services:
       - mysql
     volumes:
       - ./src/backend/storage:/app/storage
+      - ./.env:/app/.env
     networks:
       - my-network
 
@@ -43,6 +44,7 @@ services:
       - "${MYSQL_HOST_PORT}:${MYSQL_CONTAINER_PORT}"
     volumes:
       - db_data:/var/lib/mysql
+      # เพิ่มเงื่อนไขการโหลด SQL เฉพาะครั้งแรก
       - ./easyroom-docker.sql:/docker-entrypoint-initdb.d/easyroom.sql
     networks:
       - my-network

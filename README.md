@@ -10,13 +10,11 @@ easyroom-reservation/
 ├── Dockerfile
 ├── easyroom.sql (Backup DataBase)
 ├── .gitignore
-├── .env (Docker config)
+├── .env (Config)
 └── src/
     ├── frontend/
     │   └── index.html (Login file)
     │   └── booker/
-    │   └── admin/
-    │   └── executive/
     │   └── script/
     │       └── auth.js (Sessions checking)
     │       └── config.js (Frontend config, API URL, ...)
@@ -28,13 +26,11 @@ easyroom-reservation/
         │   └── db.js (DataBase connection)
         ├── modules/
         │   └── booker/
-        │   └── admin/
-        │   └── executive/
         ├── storage/
         │   └── equipment_img/
         ├── .env (Backend config, API HOST, API PORT, DB HOST, ...)
         ├── package.json
-        └── server.js (Collect All Routing Path API)
+        └── server.js (Collect All Routing API Path)
 ```
 
 ### Installation
