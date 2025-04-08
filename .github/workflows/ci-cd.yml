@@ -1,191 +1,238 @@
-name: Deploy to AWS EC2
+name: EasyRoom Deployment Pipeline
 
+# Triggers
 on:
-  workflow_dispatch:
-
   push:
-    branches: [main]
+    branches:
+      - main
+      - develop
+  pull_request:
+    branches:
+      - main
+      - develop
+  workflow_dispatch:
+    inputs:
+      deployment_reason:
+        description: "Reason for manual deployment"
+        required: false
+        default: "Manual trigger"
 
+# Global environment variables
+env:
+  DOCKER_HUB_REGISTRY: ${{ secrets.DOCKER_HUB_USERNAME }}
+  PROJECT_NAME: easyroom
+  DEPLOYMENT_ENVIRONMENT: production
+
+# Jobs with detailed stages
 jobs:
-  build:
+  # Stage 1: Code Quality and Testing
+  code-quality:
+    name: 🕵️ Code Quality Check
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
+      - name: 📦 Checkout Repository
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - name: 🛠️ Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: "18"
+          cache: "npm"
+          cache-dependency-path: |
+            src/frontend/package-lock.json
+            src/backend/package-lock.json
+
+      - name: 🧹 Install Dependencies
+        run: |
+          cd src/frontend && npm ci
+          cd ../backend && npm ci
+
+      - name: 🔍 Run Code Linting
+        run: |
+          cd src/frontend && npm run lint
+          cd ../backend && npm run lint
+
+      - name: 🧪 Run Unit Tests
+        run: |
+          cd src/frontend && npm test
+          cd ../backend && npm test
+
+  # Stage 2: Build Docker Images
+  build-images:
+    name: 🏗️ Build Docker Images
+    needs: code-quality
+    runs-on: ubuntu-latest
+    steps:
+      - name: 📦 Checkout Repository
         uses: actions/checkout@v3
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v2
-
-      - name: Login to Docker Hub
+      - name: 🔐 Docker Hub Login
         uses: docker/login-action@v2
         with:
           username: ${{ secrets.DOCKER_HUB_USERNAME }}
           password: ${{ secrets.DOCKER_HUB_TOKEN }}
 
-      - name: Build and push frontend image
+      - name: 🛠️ Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
+      - name: 🏭 Build Frontend Image
         uses: docker/build-push-action@v4
         with:
           context: .
           file: ./Dockerfile.frontend
           push: true
-          tags: ${{ secrets.DOCKER_HUB_USERNAME }}/easyroom-frontend:latest
+          tags: |
+            ${{ secrets.DOCKER_HUB_USERNAME }}/easyroom-frontend:latest
+            ${{ secrets.DOCKER_HUB_USERNAME }}/easyroom-frontend:${{ github.sha }}
 
-      - name: Build and push backend image
+      - name: 🏭 Build Backend Image
         uses: docker/build-push-action@v4
         with:
           context: .
           file: ./Dockerfile.backend
           push: true
-          tags: ${{ secrets.DOCKER_HUB_USERNAME }}/easyroom-backend:latest
+          tags: |
+            ${{ secrets.DOCKER_HUB_USERNAME }}/easyroom-backend:latest
+            ${{ secrets.DOCKER_HUB_USERNAME }}/easyroom-backend:${{ github.sha }}
 
-  deploy:
-    needs: build
+  # Stage 3: Deployment to EC2
+  deploy-to-ec2:
+    name: 🚀 Deploy to EC2 Server
+    needs: build-images
     runs-on: ubuntu-latest
     steps:
-      - name: Verify SSH connection
-        uses: appleboy/ssh-action@master
+      - name: 📦 Checkout Repository
+        uses: actions/checkout@v3
+
+      - name: 🔑 Setup SSH Key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
+
+      - name: 🛠️ Prepare Deployment Configuration
+        run: |
+          # สร้างไฟล์ .env สำหรับการ deploy
+          cat > deployment.env << EOL
+          # ค่าคอนฟิกสำหรับการ deploy
+          FRONTEND_PORT=80
+          BACKEND_PORT=3000
+          API_HOST=0.0.0.0
+
+          # การตั้งค่าฐานข้อมูล
+          DB_HOST=mysql
+          DB_PORT=3306
+          DB_USER=easyroomteam
+          DB_PASSWORD=1234
+          DB_NAME=easyroom
+
+          # Docker Hub credentials
+          DOCKER_HUB_USERNAME=${{ secrets.DOCKER_HUB_USERNAME }}
+          DEPLOYMENT_TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
+          EOL
+
+      - name: 🚢 Deploy to EC2
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.EC2_SSH_KEY }}
+        run: |
+          ssh -i ~/.ssh/deploy_key \
+              -o StrictHostKeyChecking=no \
+              ${{ secrets.EC2_USERNAME }}@${{ secrets.EC2_HOST }} << 'EOF'
+
+          # สร้างโฟลเดอร์สำหรับ deployment
+          mkdir -p ~/easyroom-deployment
+          cd ~/easyroom-deployment
+
+          # สร้าง docker-compose.yml
+          cat > docker-compose.yml << INNER_EOF
+          version: "3.8"
+          services:
+            frontend:
+              image: ${{ secrets.DOCKER_HUB_USERNAME }}/easyroom-frontend:${{ github.sha }}
+              ports:
+                - "80:80"
+              restart: always
+
+            backend:
+              image: ${{ secrets.DOCKER_HUB_USERNAME }}/easyroom-backend:${{ github.sha }}
+              ports:
+                - "3000:3000"
+              restart: always
+
+            mysql:
+              image: mysql:latest
+              environment:
+                MYSQL_ROOT_PASSWORD: 1234
+                MYSQL_DATABASE: easyroom
+              volumes:
+                - mysql_data:/var/lib/mysql
+
+          volumes:
+            mysql_data:
+          INNER_EOF
+
+          # Login Docker Hub
+          docker login -u ${{ secrets.DOCKER_HUB_USERNAME }} -p ${{ secrets.DOCKER_HUB_TOKEN }}
+
+          # Pull images
+          docker-compose pull
+
+          # Stop และ remove containers เดิม
+          docker-compose down
+
+          # Start containers ใหม่
+          docker-compose up -d
+
+          # ทำความสะอาด
+          docker image prune -f
+
+          echo "Deployment completed successfully!"
+          EOF
+
+      - name: 📋 Deployment Notification
+        if: success()
+        uses: 8398a7/action-slack@v3
         with:
-          host: ${{ secrets.EC2_HOST }}
-          username: ${{ secrets.EC2_USERNAME }}
-          key: ${{ secrets.EC2_SSH_KEY }}
-          timeout: "120s"
-          script: |
-            echo "SSH connection successful"
-            echo "Running as user: $(whoami)"
-            echo "Current directory: $(pwd)"
+          status: ${{ job.status }}
+          text: 🚀 Deployment successful for EasyRoom
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK }}
 
-      - name: Deploy to EC2
-        uses: appleboy/ssh-action@master
-        with:
-          host: ${{ secrets.EC2_HOST }}
-          username: ${{ secrets.EC2_USERNAME }}
-          key: ${{ secrets.EC2_SSH_KEY }}
-          timeout: "180s"
-          command_timeout: "20m"
-          script: |
-            # สร้างโฟลเดอร์ถ้ายังไม่มี
-            mkdir -p ~/easyroom-deployment
-            cd ~/easyroom-deployment
+  # Stage 4: Post-Deployment Checks
+  post-deployment-checks:
+    name: 🩺 Health Check
+    needs: deploy-to-ec2
+    runs-on: ubuntu-latest
+    steps:
+      - name: 🌐 Check Frontend Availability
+        run: |
+          response=$(curl -s -o /dev/null -w "%{http_code}" http://${{ secrets.EC2_HOST }})
+          if [ $response -ne 200 ]; then
+            echo "Frontend not responding correctly"
+            exit 1
+          fi
 
-            # สร้างไฟล์ .env
-            cat > .env << EOL
-            # Production environment
-            FRONTEND_PORT=80
-            BACKEND_PORT=3000
-            API_PORT=3000
-            API_HOST=0.0.0.0
+      - name: 🔍 Check Backend Availability
+        run: |
+          response=$(curl -s -o /dev/null -w "%{http_code}" http://${{ secrets.EC2_HOST }}:3000/health)
+          if [ $response -ne 200 ]; then
+            echo "Backend not responding correctly"
+            exit 1
+          fi
 
-            DB_HOST=mysql
-            DB_PORT=3306
-            DB_USER=easyroomteam
-            DB_PASSWORD=1234
-            DB_NAME=easyroom
-
-            MYSQL_ROOT_PASSWORD=1234
-            MYSQL_DATABASE=easyroom
-            MYSQL_USER=easyroomteam
-            MYSQL_PASSWORD=1234
-            MYSQL_CONTAINER_PORT=3306
-            MYSQL_HOST_PORT=3306
-
-            DOCKER_HUB_USERNAME=${{ secrets.DOCKER_HUB_USERNAME }}
-            EOL
-
-            # สร้างไฟล์ docker-compose.yml
-            cat > docker-compose.yml << EOL
-            version: "3.8"
-
-            services:
-              apache-web-server:
-                image: ${{ secrets.DOCKER_HUB_USERNAME }}/easyroom-frontend:latest
-                restart: always
-                ports:
-                  - "80:80"
-                networks:
-                  - my-network
-
-              node:
-                image: ${{ secrets.DOCKER_HUB_USERNAME }}/easyroom-backend:latest
-                restart: on-failure
-                env_file:
-                  - .env
-                ports:
-                  - "\${BACKEND_PORT}:3000"
-                depends_on:
-                  - mysql
-                volumes:
-                  - backend_storage:/app/storage
-                networks:
-                  - my-network
-
-              mysql:
-                image: mysql:latest
-                restart: always
-                env_file:
-                  - .env
-                environment:
-                  MYSQL_ROOT_PASSWORD: "\${MYSQL_ROOT_PASSWORD}"
-                  MYSQL_DATABASE: "\${MYSQL_DATABASE}"
-                  MYSQL_USER: "\${MYSQL_USER}"
-                  MYSQL_PASSWORD: "\${MYSQL_PASSWORD}"
-                volumes:
-                  - db_data:/var/lib/mysql
-                networks:
-                  - my-network
-
-              phpmyadmin:
-                image: phpmyadmin/phpmyadmin
-                depends_on:
-                  - mysql
-                ports:
-                  - "8000:80"
-                environment:
-                  PMA_HOST: mysql
-                  PMA_USER: root
-                  PMA_PASSWORD: "\${MYSQL_ROOT_PASSWORD}"
-                networks:
-                  - my-network
-
-            volumes:
-              db_data:
-                driver: local
-              backend_storage:
-                driver: local
-
-            networks:
-              my-network:
-                driver: bridge
-            EOL
-
-            echo "Creating wait-for-it.sh script"
-            cat > wait-for-it.sh << 'EOL'
-            #!/bin/sh
-            # Simple wait-for-it script
-
-            set -e
-
-            host="$1"
-            shift
-            cmd="$@"
-
-            until nc -z -v -w5 ${host%%:*} ${host##*:}; do
-              echo "⏳ รอให้ $host พร้อมให้บริการ..."
-              sleep 5
-            done
-
-            echo "✅ $host พร้อมให้บริการแล้ว กำลังดำเนินการคำสั่งต่อไป..."
-            exec $cmd
-            EOL
-
-            chmod +x wait-for-it.sh
-
-            echo "Pulling Docker images"
-            docker-compose pull
-
-            echo "Stopping existing containers"
-            docker-compose down || true
-
-            echo "Starting services"
-            docker-compose up -d
-
-            echo "Deployment completed!"
+  # Optional: Conditional job for production deployment
+  production-validation:
+    name: 🏁 Production Validation
+    if: github.ref == 'refs/heads/main'
+    needs:
+      - code-quality
+      - build-images
+      - deploy-to-ec2
+      - post-deployment-checks
+    runs-on: ubuntu-latest
+    steps:
+      - name: 🎉 Production Deployment Completed
+        run: echo "Production deployment validated successfully!"
