@@ -54,7 +54,3 @@ easyroom-reservation/
         ├── package.json
         └── server.js (Collect All Routing API Path)
 ```
-
-### Installation
-
-- **Docker:** Make sure Docker is installed on your system. You can download it from [here](https://www.docker.com/get-started).
