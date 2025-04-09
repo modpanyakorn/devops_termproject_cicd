@@ -147,7 +147,7 @@ jobs:
             docker-compose down || true
 
             # Start containers ใหม่
-            docker-compose up -d
+            docker-compose up -d --build
 
             # ตรวจสอบสถานะ
             docker-compose ps
