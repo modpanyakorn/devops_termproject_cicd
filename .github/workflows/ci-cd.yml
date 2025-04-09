@@ -89,8 +89,15 @@ jobs:
       - name: Deploy to EC2
         uses: appleboy/ssh-action@master
         with:
+          host: ${{ secrets.EC2_HOST }} # เพิ่ม host
+          username: ${{ secrets.EC2_USERNAME }} # เพิ่ม username
+          key: ${{ secrets.EC2_SSH_KEY }} # เพิ่ม SSH key
           script: |
-            # สร้าง .env ที่ครอบคลุม
+            # script เดิม
+            mkdir -p ~/easyroom-deployment
+            cd ~/easyroom-deployment
+
+            # สร้าง .env 
             cat > .env << EOL
             DB_HOST=mysql
             DB_PORT=3306
@@ -99,39 +106,6 @@ jobs:
             DB_NAME=easyroom
             API_HOST=0.0.0.0
             API_PORT=3000
-            EOL
-
-            # สร้าง docker-compose.yml
-            cat > docker-compose.yml << EOL
-            version: "3.8"
-            services:
-              mysql:
-                image: mysql:latest
-                environment:
-                  MYSQL_ROOT_PASSWORD: 1234
-                  MYSQL_DATABASE: easyroom
-                  MYSQL_USER: easyroomteam
-                  MYSQL_PASSWORD: 1234
-                ports:
-                  - "3306:3306"
-                volumes:
-                  - db_data:/var/lib/mysql
-
-              node:
-                image: ${{ secrets.DOCKER_HUB_USERNAME }}/easyroom-backend:latest
-                ports:
-                  - "3000:3000"
-                environment:
-                  - DB_HOST=mysql
-                  - DB_PORT=3306
-                  - DB_USER=easyroomteam
-                  - DB_PASSWORD=1234
-                  - DB_NAME=easyroom
-                depends_on:
-                  - mysql
-
-            volumes:
-              db_data:
             EOL
 
             # สร้าง docker-compose.yml
