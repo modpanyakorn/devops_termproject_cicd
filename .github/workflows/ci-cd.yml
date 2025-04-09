@@ -44,6 +44,15 @@ jobs:
     needs: build-and-push
     runs-on: ubuntu-latest
     steps:
+      - name: 📄 Copy easyroom.sql to EC2
+        uses: appleboy/scp-action@master
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USERNAME }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          source: "easyroom.sql"
+          target: "~/easyroom-deployment/"
+
       - name: Deploy to EC2
         uses: appleboy/ssh-action@master
         with:
@@ -117,7 +126,7 @@ jobs:
                   - "3306:3306"
                 volumes:
                   - db_data:/var/lib/mysql
-                  - ~/easyroom.sql:/docker-entrypoint-initdb.d/easyroom.sql
+                  - ./easyroom.sql:/docker-entrypoint-initdb.d/easyroom.sql
                 healthcheck:
                   test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u$$MYSQL_USER", "-p$$MYSQL_PASSWORD"]
                   interval: 10s
