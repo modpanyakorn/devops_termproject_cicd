@@ -2,15 +2,37 @@
   DevOPS Term Project (CI/CD)
 </h3>
 
+### เข้า WebSite
+ใช้ public ip ของ vm ผ่าน URL
+```bash
+122.248.221.64
+```
+Project: Easyroom Reservation
+Login ด้วย username, password
+```bash
+64312995
+1234
+```
+
+### Infrastructure
+```bash
+AWS EC2, ubuntu-noble-24.04-amd64-server-20250305
+```
+
 ### Architecture
 
 ```bash
 easyroom-reservation/
 ├── docker-compose.yml
-├── Dockerfile
+├── Dockerfile.frontend
+├── Dockerfile.backend
 ├── easyroom.sql (Backup DataBase)
-├── .gitignore
 ├── .env (Config)
+├── wait-for-it.sh
+└── .github
+│   └── workflow/
+│       └── check-vm-connect.yml
+│       └──ci-cd.yml
 └── src/
     ├── frontend/
     │   └── index.html (Login file)
