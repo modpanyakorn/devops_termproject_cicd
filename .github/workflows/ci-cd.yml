@@ -84,8 +84,6 @@ jobs:
                 image: ${{ secrets.DOCKER_HUB_USERNAME }}/easyroom-frontend:latest
                 ports:
                   - "80:80"
-                volumes:
-                  - ./src/frontend/:/var/www/html/
                 restart: always
 
               node:
@@ -110,8 +108,7 @@ jobs:
                 ports:
                   - "3306:3306"
                 volumes:
-                  - db_data:/var/lib/mysql
-                  - ./easyroom-docker.sql:/docker-entrypoint-initdb.d/easyroom.sql
+                  - ./easyroom-docker.sql:/docker-entrypoint-initdb.d/easyroom.sql # ใส่ไฟล์ SQL สำหรับ initialize database
 
             volumes:
               db_data:
