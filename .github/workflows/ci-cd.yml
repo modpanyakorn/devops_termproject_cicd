@@ -44,11 +44,37 @@ jobs:
     needs: build-and-push
     runs-on: ubuntu-latest
     steps:
-      - name: Checking easyroom.sql file
-        run: |
-          find . -name easyroom.sql -type f || echo "⚠️ easyroom.sql not found"
+      - name: Checkout Repository
+        uses: actions/checkout@v3
 
-      - name: Create deployment directory on EC2
+      - name: Verify easyroom.sql exists
+        run: |
+          if [ -f "easyroom.sql" ]; then
+            echo "✅ easyroom.sql found in repository"
+            ls -lh easyroom.sql
+          else
+            echo "❌ Error: easyroom.sql not found in repository"
+            exit 1
+          fi
+
+      - name: Install Docker on EC2
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USERNAME }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            if ! command -v docker &> /dev/null; then
+              echo "Installing Docker..."
+              sudo apt-get update
+              sudo apt-get install -y docker.io docker-compose
+              sudo usermod -aG docker $USER
+              newgrp docker
+            else
+              echo "Docker already installed"
+            fi
+
+      - name: Prepare Deployment Directory
         uses: appleboy/ssh-action@master
         with:
           host: ${{ secrets.EC2_HOST }}
@@ -56,18 +82,21 @@ jobs:
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
             mkdir -p ~/easyroom-deployment
+            chmod 755 ~/easyroom-deployment
+            echo "Directory prepared: $(ls -ld ~/easyroom-deployment)"
 
-      - name: Copy easyroom.sql to EC2
+      - name: Transfer easyroom.sql
         uses: appleboy/scp-action@master
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USERNAME }}
           key: ${{ secrets.EC2_SSH_KEY }}
-          source: "easyroom.sql" # ไม่ต้องมี ./
+          source: "easyroom.sql"
           target: "~/easyroom-deployment/"
-        if: success() && steps.check-sql.outcome == 'success' # ต้องเพิ่ม step ก่อนหน้านี้เพื่อตรวจสอบไฟล์
+          overwrite: true
+          timeout: 5m
 
-      - name: Deploy to EC2
+      - name: Verify File Transfer
         uses: appleboy/ssh-action@master
         with:
           host: ${{ secrets.EC2_HOST }}
@@ -75,15 +104,34 @@ jobs:
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
             cd ~/easyroom-deployment
-
-            # ตรวจสอบไฟล์
-            if [ ! -f easyroom.sql ]; then
-              echo "❌ Error: easyroom.sql not found on EC2"
+            if [ -f easyroom.sql ]; then
+              echo "✅ File verified:"
+              ls -lh easyroom.sql
+              echo "File content head:"
+              head -n 5 easyroom.sql
+            else
+              echo "❌ Error: File transfer failed"
               exit 1
             fi
 
-            # สร้าง .env file
-            cat > .env << EOL
+      - name: Deploy Application
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USERNAME }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script_timeout: 15m
+          script: |
+            set -e
+
+            # Switch to deployment directory
+            cd ~/easyroom-deployment
+
+            # Cleanup previous deployment
+            docker-compose down -v --remove-orphans || true
+
+            # Create .env file
+            cat > .env <<EOL
             FRONTEND_PORT=80
             BACKEND_PORT=3000
             API_PORT=3000
@@ -103,37 +151,29 @@ jobs:
             MYSQL_HOST_PORT=3306
             EOL
 
-            # สร้าง docker-compose.yml
-            cat > docker-compose.yml << EOL
+            # Generate docker-compose.yml
+            cat > docker-compose.yml <<EOL
             version: "3.8"
             services:
-              apache-web-server:
+              frontend:
                 image: ${{ secrets.DOCKER_HUB_USERNAME }}/easyroom-frontend:latest
                 ports:
                   - "80:80"
-                restart: always
+                restart: unless-stopped
 
-              node:
+              backend:
                 image: ${{ secrets.DOCKER_HUB_USERNAME }}/easyroom-backend:latest
                 ports:
                   - "3000:3000"
-                env_file:
-                  - .env
-                environment:
-                  - DB_HOST=mysql
-                  - DB_PORT=3306
-                  - DB_USER=easyroomteam
-                  - DB_PASSWORD=1234
-                  - DB_NAME=easyroom
-                restart: always
+                env_file: .env
                 depends_on:
                   mysql:
                     condition: service_healthy
                 networks:
-                  - my-network
+                  - easyroom-net
 
               mysql:
-                image: mysql:latest
+                image: mysql:8.0
                 environment:
                   MYSQL_ROOT_PASSWORD: 1234
                   MYSQL_DATABASE: easyroom
@@ -143,7 +183,7 @@ jobs:
                 ports:
                   - "3306:3306"
                 volumes:
-                  - db_data:/var/lib/mysql
+                  - mysql_data:/var/lib/mysql
                   - ./easyroom.sql:/docker-entrypoint-initdb.d/easyroom.sql
                 healthcheck:
                   test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u$$MYSQL_USER", "-p$$MYSQL_PASSWORD"]
@@ -151,23 +191,37 @@ jobs:
                   timeout: 5s
                   retries: 10
                   start_period: 30s
-                restart: always
                 networks:
-                  - my-network
+                  - easyroom-net
 
             networks:
-              my-network:
+              easyroom-net:
                 driver: bridge
 
             volumes:
-              db_data:
-
+              mysql_data:
             EOL
 
-            # Login Docker Hub
-            # docker login -u ${{ secrets.DOCKER_HUB_USERNAME }} -p ${{ secrets.DOCKER_HUB_TOKEN }}
-
+            # Pull latest images
             docker-compose pull
-            docker-compose down || true
+
+            # Start services
             docker-compose up -d --build
+
+            # Verify deployment
+            echo "📦 Running containers:"
             docker-compose ps
+            echo "🔍 Checking frontend:"
+            curl -I http://localhost || true
+            echo "🔍 Checking backend:"
+            curl -I http://localhost:3000 || true
+
+      - name: Health Check
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USERNAME }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            cd ~/easyroom-deployment
+            docker-compose exec mysql mysql -u easyroomteam -p1234 -e "USE easyroom; SHOW TABLES;" || exit 1
