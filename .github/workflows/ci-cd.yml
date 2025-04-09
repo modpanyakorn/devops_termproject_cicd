@@ -45,7 +45,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checking easyroom.sql file
-        run: ls -la && ls -la easyroom.sql || echo "⚠️ easyroom.sql not found"
+        run: |
+          find . -name easyroom.sql -type f || echo "⚠️ easyroom.sql not found"
+
+      - name: Create deployment directory on EC2
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USERNAME }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            mkdir -p ~/easyroom-deployment
 
       - name: Copy easyroom.sql to EC2
         uses: appleboy/scp-action@master
@@ -53,8 +63,9 @@ jobs:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USERNAME }}
           key: ${{ secrets.EC2_SSH_KEY }}
-          source: "easyroom.sql"
+          source: "easyroom.sql" # ไม่ต้องมี ./
           target: "~/easyroom-deployment/"
+        if: success() && steps.check-sql.outcome == 'success' # ต้องเพิ่ม step ก่อนหน้านี้เพื่อตรวจสอบไฟล์
 
       - name: Deploy to EC2
         uses: appleboy/ssh-action@master
@@ -63,9 +74,13 @@ jobs:
           username: ${{ secrets.EC2_USERNAME }}
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
-            # สร้างโฟลเดอร์สำหรับ deployment
-            mkdir -p ~/easyroom-deployment
             cd ~/easyroom-deployment
+
+            # ตรวจสอบไฟล์
+            if [ ! -f easyroom.sql ]; then
+              echo "❌ Error: easyroom.sql not found on EC2"
+              exit 1
+            fi
 
             # สร้าง .env file
             cat > .env << EOL
@@ -150,16 +165,9 @@ jobs:
             EOL
 
             # Login Docker Hub
-            docker login -u ${{ secrets.DOCKER_HUB_USERNAME }} -p ${{ secrets.DOCKER_HUB_TOKEN }}
+            # docker login -u ${{ secrets.DOCKER_HUB_USERNAME }} -p ${{ secrets.DOCKER_HUB_TOKEN }}
 
-            # Pull images
             docker-compose pull
-
-            # Stop และ remove containers เดิม
             docker-compose down || true
-
-            # Start containers ใหม่
             docker-compose up -d --build
-
-            # ตรวจสอบสถานะ
             docker-compose ps
