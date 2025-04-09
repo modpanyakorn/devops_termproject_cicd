@@ -11,6 +11,14 @@ const createConnection = () => {
     port: process.env.DB_PORT || 3306,
   });
 
+  console.log("Database Connection Config:", {
+    host: process.env.DB_HOST || "mysql",
+    user: process.env.DB_USER || "easyroomteam",
+    password: process.env.DB_PASSWORD ? "******" : "NOT_SET",
+    database: process.env.DB_NAME || "easyroom",
+    port: process.env.DB_PORT || 3306,
+  });
+
   // จัดการเหตุการณ์เมื่อเกิดข้อผิดพลาดในการเชื่อมต่อ
   connection.on("error", (err) => {
     console.error("Database connection error:", err);

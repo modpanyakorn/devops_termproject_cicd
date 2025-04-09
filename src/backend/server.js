@@ -85,6 +85,25 @@ app.use("/storage/equipment_img", express.static(uploadDir));
 app.use("/auth", require("./core/auth/auth.routes"));
 app.use("/booker", require("./modules/booker/booker.routes"));
 
+const connection = require("./core/db");
+
+// Add a health check endpoint
+app.get("/health", (req, res) => {
+  connection.query("SELECT 1", (err) => {
+    if (err) {
+      console.error("Database health check failed:", err);
+      return res.status(500).json({
+        status: "error",
+        message: "Database connection failed",
+      });
+    }
+    res.status(200).json({
+      status: "healthy",
+      database: "connected",
+    });
+  });
+});
+
 // list endpoints
 console.log("📚 API Endpoints:");
 console.table(listEndpoints(app));

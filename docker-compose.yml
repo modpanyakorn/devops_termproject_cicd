@@ -5,6 +5,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.frontend
+    volumes:
+      - ./src/frontend/:/var/www/html/
     ports:
       - "80:80"
     networks:
@@ -38,6 +40,7 @@ services:
       - "3306:3306"
     volumes:
       - db_data:/var/lib/mysql
+      - ./easyroom-docker.sql:/docker-entrypoint-initdb.d/easyroom.sql
     networks:
       - my-network
 
