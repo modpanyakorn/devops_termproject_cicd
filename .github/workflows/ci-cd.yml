@@ -44,7 +44,10 @@ jobs:
     needs: build-and-push
     runs-on: ubuntu-latest
     steps:
-      - name: 📄 Copy easyroom.sql to EC2
+      - name: Checking easyroom.sql file
+        run: ls -la && ls -la easyroom.sql || echo "⚠️ easyroom.sql not found"
+
+      - name: Copy easyroom.sql to EC2
         uses: appleboy/scp-action@master
         with:
           host: ${{ secrets.EC2_HOST }}
