@@ -1,5 +1,5 @@
 #!/bin/sh
-# wait-for-it.sh แบบปรับปรุงที่ทำงานบน BusyBox และรอจนกว่า MySQL จะพร้อมอย่างแท้จริง
+# Improved wait-for-it.sh script that ensures MySQL is fully ready with tables
 
 set -e
 
@@ -7,30 +7,49 @@ host="$1"
 shift
 cmd="$@"
 
-echo "⏳ รอให้ $host พร้อมให้บริการ..."
+HOST_PART=${host%%:*}
+PORT_PART=${host##*:}
 
-# รอให้ MySQL พร้อมเชื่อมต่อ
-until nc -z -v -w5 ${host%%:*} ${host##*:}; do
-  echo "⏳ รอให้ $host พร้อมให้บริการ..."
-  sleep 5
+echo "⏳ Waiting for $host to be available..."
+
+# Wait for MySQL to accept connections
+until nc -z -v -w5 $HOST_PART $PORT_PART; do
+  echo "⏳ Still waiting for $host to accept connections..."
+  sleep 3
 done
 
-# รอให้ฐานข้อมูลพร้อมใช้งานจริง (รอให้สร้างตารางเสร็จ)
-echo "⏳ รอให้ MySQL สร้างตารางให้เสร็จสมบูรณ์..."
-for i in $(seq 1 30); do
-  if echo "SHOW TABLES" | mysql -h${host%%:*} -P${host##*:} -ueasyroomteam -p1234 easyroom 2>/dev/null | grep -q 'room_request'; then
-    echo "✅ ตาราง room_request พร้อมใช้งานแล้ว"
+echo "✅ MySQL is accepting connections. Now checking for database readiness..."
+
+# Wait for the required tables to be created
+MAX_ATTEMPTS=30
+ATTEMPT=1
+TABLE_FOUND=0
+
+while [ $ATTEMPT -le $MAX_ATTEMPTS ]; do
+  echo "⏳ Checking if tables are ready (attempt $ATTEMPT/$MAX_ATTEMPTS)..."
+  
+  if mysql -h$HOST_PART -P$PORT_PART -ueasyroomteam -p1234 easyroom -e "SHOW TABLES" 2>/dev/null | grep -q 'room_request'; then
+    echo "✅ Found room_request table. Database is ready!"
+    TABLE_FOUND=1
     break
   fi
-  echo "⏳ ยังไม่พบตาราง room_request... รอต่ออีก 5 วินาที"
-  sleep 5
   
-  # ถ้ารอนานเกินไป ให้พยายามนำเข้า SQL ด้วยตัวเอง
-  if [ $i -eq 20 ]; then
-    echo "⚠️ ยังไม่พบตาราง ลองนำเข้า SQL ด้วยตัวเอง..."
-    mysql -h${host%%:*} -P${host##*:} -ueasyroomteam -p1234 easyroom < /docker-entrypoint-initdb.d/easyroom.sql 2>/dev/null || true
+  echo "⏳ Tables not ready yet. Waiting another 3 seconds..."
+  sleep 3
+  ATTEMPT=$((ATTEMPT + 1))
+  
+  # Try to import SQL manually if needed
+  if [ $ATTEMPT -eq 15 ] || [ $ATTEMPT -eq 25 ]; then
+    echo "🔄 Tables still not ready. Attempting manual import..."
+    mysql -h$HOST_PART -P$PORT_PART -ueasyroomteam -p1234 easyroom < /docker-entrypoint-initdb.d/easyroom.sql 2>/dev/null || true
   fi
 done
 
-echo "✅ $host พร้อมให้บริการแล้ว กำลังดำเนินการคำสั่งต่อไป..."
+if [ $TABLE_FOUND -eq 0 ]; then
+  echo "⚠️ Warning: Tables might not be fully ready, but proceeding anyway..."
+else
+  echo "✅ Database is fully ready with all required tables!"
+fi
+
+echo "⚙️ Starting application: $cmd"
 exec $cmd

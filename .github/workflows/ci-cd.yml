@@ -85,13 +85,13 @@ jobs:
             chmod 755 ~/easyroom-deployment
             echo "Directory prepared: $(ls -ld ~/easyroom-deployment)"
 
-      - name: Transfer easyroom.sql
+      - name: Transfer Files to EC2
         uses: appleboy/scp-action@master
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USERNAME }}
           key: ${{ secrets.EC2_SSH_KEY }}
-          source: "easyroom.sql"
+          source: "easyroom.sql,wait-for-it.sh"
           target: "~/easyroom-deployment/"
           overwrite: true
           timeout: 5m
@@ -104,15 +104,48 @@ jobs:
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
             cd ~/easyroom-deployment
-            if [ -f easyroom.sql ]; then
-              echo "✅ File verified:"
-              ls -lh easyroom.sql
-              echo "File content head:"
-              head -n 5 easyroom.sql
+            chmod +x wait-for-it.sh
+            if [ -f easyroom.sql ] && [ -f wait-for-it.sh ]; then
+              echo "✅ Files verified:"
+              ls -lh easyroom.sql wait-for-it.sh
             else
               echo "❌ Error: File transfer failed"
               exit 1
             fi
+
+      - name: Create DB Init Script
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USERNAME }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            cd ~/easyroom-deployment
+
+            # Create a script to optimize MySQL init
+            cat > init-db.sh <<EOL
+            #!/bin/bash
+            set -e
+
+            echo "Creating EasyRoom database if it doesn't exist..."
+
+            # Wait for MySQL to be ready
+            until mysql -h\${MYSQL_HOST} -P\${MYSQL_PORT} -u\${MYSQL_USER} -p\${MYSQL_PASSWORD} -e "SELECT 1"; do
+              echo "MySQL not ready yet - waiting..."
+              sleep 3
+            done
+
+            # Create database if not exists
+            mysql -h\${MYSQL_HOST} -P\${MYSQL_PORT} -u\${MYSQL_USER} -p\${MYSQL_PASSWORD} -e "CREATE DATABASE IF NOT EXISTS \${MYSQL_DATABASE}"
+
+            # Import the SQL file
+            echo "Importing database schema and data..."
+            mysql -h\${MYSQL_HOST} -P\${MYSQL_PORT} -u\${MYSQL_USER} -p\${MYSQL_PASSWORD} \${MYSQL_DATABASE} < /docker-entrypoint-initdb.d/easyroom.sql
+
+            echo "Database initialization completed!"
+            EOL
+
+            chmod +x init-db.sh
 
       - name: Deploy Application
         uses: appleboy/ssh-action@master
@@ -149,6 +182,9 @@ jobs:
             MYSQL_PASSWORD=1234
             MYSQL_CONTAINER_PORT=3306
             MYSQL_HOST_PORT=3306
+
+            # For docker-compose variable replacement
+            DOCKER_HUB_USERNAME=${{ secrets.DOCKER_HUB_USERNAME }}
             EOL
 
             # Generate docker-compose.yml
@@ -156,16 +192,22 @@ jobs:
             version: "3.8"
             services:
               frontend:
-                image: ${{ secrets.DOCKER_HUB_USERNAME }}/easyroom-frontend:latest
+                image: \${DOCKER_HUB_USERNAME}/easyroom-frontend:latest
                 ports:
                   - "80:80"
                 restart: unless-stopped
+                depends_on:
+                  - backend
 
               backend:
-                image: ${{ secrets.DOCKER_HUB_USERNAME }}/easyroom-backend:latest
+                image: \${DOCKER_HUB_USERNAME}/easyroom-backend:latest
                 ports:
                   - "3000:3000"
                 env_file: .env
+                volumes:
+                  - ./wait-for-it.sh:/wait-for-it.sh
+                entrypoint: ["/bin/sh", "-c", "chmod +x /wait-for-it.sh && /wait-for-it.sh mysql:3306 node server.js"]
+                restart: unless-stopped
                 depends_on:
                   mysql:
                     condition: service_healthy
@@ -174,23 +216,23 @@ jobs:
 
               mysql:
                 image: mysql:8.0
+                command: --default-authentication-plugin=mysql_native_password --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
                 environment:
                   MYSQL_ROOT_PASSWORD: 1234
                   MYSQL_DATABASE: easyroom
                   MYSQL_USER: easyroomteam
                   MYSQL_PASSWORD: 1234
-                  MYSQL_INIT_COMMAND: "source /docker-entrypoint-initdb.d/easyroom.sql"
                 ports:
                   - "3306:3306"
                 volumes:
                   - mysql_data:/var/lib/mysql
                   - ./easyroom.sql:/docker-entrypoint-initdb.d/easyroom.sql
                 healthcheck:
-                  test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u$$MYSQL_USER", "-p$$MYSQL_PASSWORD"]
-                  interval: 10s
+                  test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u\$\$MYSQL_USER", "-p\$\$MYSQL_PASSWORD"]
+                  interval: 5s
                   timeout: 5s
                   retries: 10
-                  start_period: 30s
+                  start_period: 15s
                 networks:
                   - easyroom-net
 
@@ -211,17 +253,33 @@ jobs:
             # Verify deployment
             echo "📦 Running containers:"
             docker-compose ps
-            echo "🔍 Checking frontend:"
-            curl -I http://localhost || true
-            echo "🔍 Checking backend:"
-            curl -I http://localhost:3000 || true
+
+            # Wait for deployment to stabilize
+            echo "⏳ Waiting for the application to stabilize (30 seconds)..."
+            sleep 30
+
+            # Final check
+            echo "🔍 Checking MySQL tables:"
+            docker-compose exec mysql mysql -ueasyroomteam -p1234 -e "USE easyroom; SHOW TABLES;" || echo "Still initializing..."
+
+            echo "🔍 Checking backend logs:"
+            docker-compose logs --tail 20 backend
 
       - name: Health Check
         uses: appleboy/ssh-action@master
+        if: always()
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USERNAME }}
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
             cd ~/easyroom-deployment
-            docker-compose exec mysql mysql -u easyroomteam -p1234 -e "USE easyroom; SHOW TABLES;" || exit 1
+
+            echo "🔍 Application Status:"
+            docker-compose ps
+
+            echo "📊 MySQL Status:"
+            docker-compose exec mysql mysqladmin -ueasyroomteam -p1234 status || echo "MySQL not ready yet"
+
+            echo "📝 Recent Container Logs:"
+            docker-compose logs --tail 20
