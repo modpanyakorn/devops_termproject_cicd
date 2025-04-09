@@ -100,7 +100,8 @@ jobs:
                   - DB_NAME=easyroom
                 restart: always
                 depends_on:
-                  - mysql
+                  mysql:
+                    condition: service_healthy
                 networks:
                   - my-network
 
@@ -115,7 +116,13 @@ jobs:
                   - "3306:3306"
                 volumes:
                   - db_data:/var/lib/mysql # เก็บข้อมูลฐานข้อมูล
-                  - ./easyroom-docker.sql:/docker-entrypoint-initdb.d/easyroom.sql # ใส่ไฟล์ SQL สำหรับ initialize database
+                  - ./easyroom-docker.sql:/docker-entrypoint-initdb.d/easyroom.sql
+                healthcheck:
+                  test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u$$MYSQL_USER", "-p$$MYSQL_PASSWORD"]
+                  interval: 5s
+                  timeout: 5s
+                  retries: 10
+                restart: always
                 networks:
                   - my-network
 
