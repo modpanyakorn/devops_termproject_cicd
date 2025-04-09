@@ -5,11 +5,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.frontend
-    volumes:
-      - ./src/frontend/:/var/www/html/
     ports:
-      - "${FRONTEND_PORT}:80"
-      - "${FRONTEND_PORT2}:80"
+      - "80:80"
     networks:
       - my-network
 
@@ -17,63 +14,30 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.backend
-    restart: on-failure # หากเกิดข้อผิดพลาด จะรีสตาร์ทโดยอัตโนมัติ
-    env_file:
-      - .env
     ports:
-      - "${BACKEND_PORT}:3000"
+      - "3000:3000"
     depends_on:
       - mysql
-    volumes:
-      - ./src/backend/storage:/app/storage
+    environment:
+      - DB_HOST=mysql
+      - DB_PORT=3306
+      - DB_USER=easyroomteam
+      - DB_PASSWORD=1234
+      - DB_NAME=easyroom
     networks:
       - my-network
 
   mysql:
     image: mysql:latest
-    restart: always
-    env_file:
-      - .env
     environment:
-      MYSQL_ROOT_PASSWORD: "${MYSQL_ROOT_PASSWORD}"
-      MYSQL_DATABASE: "${MYSQL_DATABASE}"
-      MYSQL_USER: "${MYSQL_USER}"
-      MYSQL_PASSWORD: "${MYSQL_PASSWORD}"
+      MYSQL_ROOT_PASSWORD: 1234
+      MYSQL_DATABASE: easyroom
+      MYSQL_USER: easyroomteam
+      MYSQL_PASSWORD: 1234
     ports:
-      - "${MYSQL_HOST_PORT}:${MYSQL_CONTAINER_PORT}"
+      - "3306:3306"
     volumes:
       - db_data:/var/lib/mysql
-      # เพิ่มเงื่อนไขการโหลด SQL เฉพาะครั้งแรก
-      - ./easyroom-docker.sql:/docker-entrypoint-initdb.d/easyroom.sql
-    networks:
-      - my-network
-    healthcheck:
-      test:
-        [
-          "CMD",
-          "mysqladmin",
-          "ping",
-          "-h",
-          "localhost",
-          "-u",
-          "root",
-          "-p${MYSQL_ROOT_PASSWORD}",
-        ]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 30s
-
-  phpmyadmin:
-    image: phpmyadmin/phpmyadmin
-    depends_on:
-      - mysql
-    ports:
-      - "${PHPMYADMIN_PORT}:80"
-    environment:
-      PMA_HOST: mysql
-      PMA_USER: root
-      PMA_PASSWORD: "${MYSQL_ROOT_PASSWORD}"
     networks:
       - my-network
 
@@ -83,4 +47,3 @@ networks:
 
 volumes:
   db_data:
-    driver: local

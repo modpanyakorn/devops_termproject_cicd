@@ -5,10 +5,10 @@ require("dotenv").config();
 const createConnection = () => {
   const connection = mysql.createConnection({
     host: process.env.DB_HOST || "mysql",
-    user: process.env.DB_USER,
-    password: process.env.DB_PASSWORD,
-    database: process.env.DB_NAME,
-    port: process.env.DB_PORT,
+    user: process.env.DB_USER || "easyroomteam", // เพิ่มค่าเริ่มต้น
+    password: process.env.DB_PASSWORD || "1234", // เพิ่มค่าเริ่มต้น
+    database: process.env.DB_NAME || "easyroom", // เพิ่มค่าเริ่มต้น
+    port: process.env.DB_PORT || 3306,
   });
 
   // จัดการเหตุการณ์เมื่อเกิดข้อผิดพลาดในการเชื่อมต่อ

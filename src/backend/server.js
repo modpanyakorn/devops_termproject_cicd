@@ -102,8 +102,8 @@ const HOST = process.env.API_HOST || "0.0.0.0";
 const PORT = process.env.API_PORT || 3000;
 
 // เพิ่ม logging เพื่อ debug
-console.log(`DB_HOST: ${process.env.DB_HOST}`);
-console.log(`DB_PORT: ${process.env.DB_PORT}`);
+console.log(`API_HOST: ${process.env.API_HOST}`);
+console.log(`API_PORT: ${process.env.API_PORT}`);
 server.listen(PORT, HOST, () => {
   console.log(`✅ Server running at http://${HOST}:${PORT}`);
 });

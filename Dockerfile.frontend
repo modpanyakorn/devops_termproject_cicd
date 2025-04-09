@@ -2,24 +2,14 @@ FROM php:8.0-apache
 RUN docker-php-ext-install mysqli && docker-php-ext-enable mysqli
 RUN apt-get update && apt-get upgrade -y
 
-# เปิด mod_rewrite สำหรับ routing
+# เปิด mod_rewrite
 RUN a2enmod rewrite
 
-# Copy ไฟล์ frontend
-COPY ./src/frontend/ /var/www/html/
-
-# แก้ไข Apache configuration
+# แก้ Apache configuration
 RUN sed -i 's/AllowOverride None/AllowOverride All/g' /etc/apache2/apache2.conf
 
-# สร้าง .htaccess สำหรับ routing
-RUN echo '<IfModule mod_rewrite.c>\n\
-    RewriteEngine On\n\
-    RewriteBase /\n\
-    RewriteRule ^index\.html$ - [L]\n\
-    RewriteCond %{REQUEST_FILENAME} !-f\n\
-    RewriteCond %{REQUEST_FILENAME} !-d\n\
-    RewriteRule . /index.html [L]\n\
-    </IfModule>' > /var/www/html/.htaccess
+# Debug: สร้าง index.html ถ้าไม่มี
+RUN echo "<html><body><h1>EasyRoom Frontend</h1></body></html>" > /var/www/html/index.html
 
 # ตั้งค่า permissions
 RUN chown -R www-data:www-data /var/www/html \
