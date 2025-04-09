@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>เข้าสู่ระบบ - EasyRoom</title>
+    <title>เข้าสู่ระบบ - EasyRoom Reservation System</title>
     <style>
       body {
         font-family: Arial, sans-serif;
@@ -122,7 +122,8 @@
               } else if (role === "ผู้ดูแลห้อง") {
                 window.location.href = "./admin/index.html";
               } else if (role === "ผู้บริหาร") {
-                window.location.href = "./executive/booking_rooms_requests.html";
+                window.location.href =
+                  "./executive/booking_rooms_requests.html";
               } else {
                 errorMessage.textContent =
                   "ไม่สามารถระบุ Role ได้ กรุณาติดต่อผู้ดูแล";
