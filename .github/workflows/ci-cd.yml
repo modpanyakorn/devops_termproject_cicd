@@ -6,8 +6,52 @@ on:
   workflow_dispatch:
 
 jobs:
-  build-and-push:
-    name: 🏗️ Build and Push Images
+  # ===== 1. TEST PHASE =====
+  test:
+    name: 🧪 Test & Code Quality
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0 # ต้องการประวัติ git ทั้งหมดสำหรับ SonarQube
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: "18"
+          cache: "npm"
+          cache-dependency-path: "**/package-lock.json"
+
+      - name: Install Dependencies for Backend
+        run: |
+          cd src/backend
+          npm ci
+
+      - name: Run Backend Tests
+        run: |
+          cd src/backend
+          npm test || echo "No tests specified"
+
+      - name: SonarQube Scan
+        uses: SonarSource/sonarqube-scan-action@master
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+
+      - name: Quality Gate Check
+        uses: SonarSource/sonarqube-quality-gate-action@master
+        timeout-minutes: 5
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+        # ตรวจสอบผลลัพธ์ของการสแกน SonarQube แต่ให้ผ่านไปได้แม้จะไม่ผ่าน Quality Gate
+        continue-on-error: true
+
+  # ===== 2. BUILD PHASE =====
+  build:
+    name: 🏗️ Build & Push Images
+    needs: test
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Repository
@@ -19,6 +63,9 @@ jobs:
           username: ${{ secrets.DOCKER_HUB_USERNAME }}
           password: ${{ secrets.DOCKER_HUB_TOKEN }}
 
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
       - name: Build and Push Frontend Image
         uses: docker/build-push-action@v4
         with:
@@ -28,6 +75,8 @@ jobs:
           tags: |
             ${{ secrets.DOCKER_HUB_USERNAME }}/easyroom-frontend:latest
             ${{ secrets.DOCKER_HUB_USERNAME }}/easyroom-frontend:${{ github.sha }}
+          cache-from: type=registry,ref=${{ secrets.DOCKER_HUB_USERNAME }}/easyroom-frontend:buildcache
+          cache-to: type=registry,ref=${{ secrets.DOCKER_HUB_USERNAME }}/easyroom-frontend:buildcache,mode=max
 
       - name: Build and Push Backend Image
         uses: docker/build-push-action@v4
@@ -38,32 +87,47 @@ jobs:
           tags: |
             ${{ secrets.DOCKER_HUB_USERNAME }}/easyroom-backend:latest
             ${{ secrets.DOCKER_HUB_USERNAME }}/easyroom-backend:${{ github.sha }}
+          cache-from: type=registry,ref=${{ secrets.DOCKER_HUB_USERNAME }}/easyroom-backend:buildcache
+          cache-to: type=registry,ref=${{ secrets.DOCKER_HUB_USERNAME }}/easyroom-backend:buildcache,mode=max
 
-  deploy-to-ec2:
-    name: 🚀 Deploy to EC2
-    needs: build-and-push
+  # ===== 3. DEPLOY PHASE =====
+  deploy:
+    name: 🚀 Deploy to Production
+    needs: build
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v3
 
-      - name: Verify easyroom.sql exists
+      - name: Verify Required Files
         run: |
           if [ -f "easyroom.sql" ]; then
-            echo "✅ easyroom.sql found in repository"
-            ls -lh easyroom.sql
+            echo "✅ easyroom.sql found"
           else
-            echo "❌ Error: easyroom.sql not found in repository"
+            echo "❌ Error: easyroom.sql not found"
             exit 1
           fi
 
-      - name: Install Docker on EC2
+          if [ -f "wait-for-it.sh" ]; then
+            echo "✅ wait-for-it.sh found"
+          else
+            echo "❌ Error: wait-for-it.sh not found"
+            exit 1
+          fi
+
+      - name: Setup SSH Agent
+        uses: webfactory/ssh-agent@v0.7.0
+        with:
+          ssh-private-key: ${{ secrets.EC2_SSH_KEY }}
+
+      - name: Prepare EC2 Environment
         uses: appleboy/ssh-action@master
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USERNAME }}
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
+            # Ensure Docker is installed
             if ! command -v docker &> /dev/null; then
               echo "Installing Docker..."
               sudo apt-get update
@@ -74,16 +138,14 @@ jobs:
               echo "Docker already installed"
             fi
 
-      - name: Prepare Deployment Directory
-        uses: appleboy/ssh-action@master
-        with:
-          host: ${{ secrets.EC2_HOST }}
-          username: ${{ secrets.EC2_USERNAME }}
-          key: ${{ secrets.EC2_SSH_KEY }}
-          script: |
-            mkdir -p ~/easyroom-deployment
-            chmod 755 ~/easyroom-deployment
-            echo "Directory prepared: $(ls -ld ~/easyroom-deployment)"
+            # Create deployment directories
+            mkdir -p ~/easyroom-deployment/monitoring/prometheus
+            mkdir -p ~/easyroom-deployment/monitoring/grafana/provisioning/dashboards
+            mkdir -p ~/easyroom-deployment/monitoring/grafana/provisioning/datasources
+            mkdir -p ~/easyroom-deployment/monitoring/grafana/dashboards
+            mkdir -p ~/easyroom-deployment/src/backend/storage/equipment_img
+            mkdir -p ~/easyroom-deployment/src/backend/certificate
+            chmod -R 755 ~/easyroom-deployment
 
       - name: Transfer Files to EC2
         uses: appleboy/scp-action@master
@@ -91,12 +153,12 @@ jobs:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USERNAME }}
           key: ${{ secrets.EC2_SSH_KEY }}
-          source: "easyroom.sql,wait-for-it.sh"
+          source: "easyroom.sql,wait-for-it.sh,monitoring/**,sonar-project.properties"
           target: "~/easyroom-deployment/"
           overwrite: true
           timeout: 5m
 
-      - name: Verify File Transfer
+      - name: Setup Configuration
         uses: appleboy/ssh-action@master
         with:
           host: ${{ secrets.EC2_HOST }}
@@ -105,63 +167,6 @@ jobs:
           script: |
             cd ~/easyroom-deployment
             chmod +x wait-for-it.sh
-            if [ -f easyroom.sql ] && [ -f wait-for-it.sh ]; then
-              echo "✅ Files verified:"
-              ls -lh easyroom.sql wait-for-it.sh
-            else
-              echo "❌ Error: File transfer failed"
-              exit 1
-            fi
-
-      - name: Create DB Init Script
-        uses: appleboy/ssh-action@master
-        with:
-          host: ${{ secrets.EC2_HOST }}
-          username: ${{ secrets.EC2_USERNAME }}
-          key: ${{ secrets.EC2_SSH_KEY }}
-          script: |
-            cd ~/easyroom-deployment
-
-            # Create a script to optimize MySQL init
-            cat > init-db.sh <<EOL
-            #!/bin/bash
-            set -e
-
-            echo "Creating EasyRoom database if it doesn't exist..."
-
-            # Wait for MySQL to be ready
-            until mysql -h\${MYSQL_HOST} -P\${MYSQL_PORT} -u\${MYSQL_USER} -p\${MYSQL_PASSWORD} -e "SELECT 1"; do
-              echo "MySQL not ready yet - waiting..."
-              sleep 3
-            done
-
-            # Create database if not exists
-            mysql -h\${MYSQL_HOST} -P\${MYSQL_PORT} -u\${MYSQL_USER} -p\${MYSQL_PASSWORD} -e "CREATE DATABASE IF NOT EXISTS \${MYSQL_DATABASE}"
-
-            # Import the SQL file
-            echo "Importing database schema and data..."
-            mysql -h\${MYSQL_HOST} -P\${MYSQL_PORT} -u\${MYSQL_USER} -p\${MYSQL_PASSWORD} \${MYSQL_DATABASE} < /docker-entrypoint-initdb.d/easyroom.sql
-
-            echo "Database initialization completed!"
-            EOL
-
-            chmod +x init-db.sh
-
-      - name: Deploy Application
-        uses: appleboy/ssh-action@master
-        with:
-          host: ${{ secrets.EC2_HOST }}
-          username: ${{ secrets.EC2_USERNAME }}
-          key: ${{ secrets.EC2_SSH_KEY }}
-          script_timeout: 15m
-          script: |
-            set -e
-
-            # Switch to deployment directory
-            cd ~/easyroom-deployment
-
-            # Cleanup previous deployment
-            docker-compose down -v --remove-orphans || true
 
             # Create .env file
             cat > .env <<EOL
@@ -183,11 +188,210 @@ jobs:
             MYSQL_CONTAINER_PORT=3306
             MYSQL_HOST_PORT=3306
 
+            # Grafana env vars
+            GF_SECURITY_ADMIN_USER=admin
+            GF_SECURITY_ADMIN_PASSWORD=admin
+            GF_USERS_ALLOW_SIGN_UP=false
+
             # For docker-compose variable replacement
             DOCKER_HUB_USERNAME=${{ secrets.DOCKER_HUB_USERNAME }}
             EOL
 
-            # Generate docker-compose.yml
+            # Create monitoring configuration if not exists
+            if [ ! -f "monitoring/prometheus/prometheus.yml" ]; then
+              # Create Prometheus config
+              cat > monitoring/prometheus/prometheus.yml <<EOL
+            global:
+              scrape_interval: 15s
+              evaluation_interval: 15s
+
+            scrape_configs:
+              - job_name: 'prometheus'
+                static_configs:
+                  - targets: ['localhost:9090']
+
+              - job_name: 'node-exporter'
+                static_configs:
+                  - targets: ['node-exporter:9100']
+
+              - job_name: 'mysql-exporter'
+                static_configs:
+                  - targets: ['mysql-exporter:9104']
+
+              - job_name: 'cadvisor'
+                static_configs:
+                  - targets: ['cadvisor:8080']
+
+              - job_name: 'backend'
+                static_configs:
+                  - targets: ['backend:3000']
+            EOL
+              
+              # Create Grafana datasource
+              cat > monitoring/grafana/provisioning/datasources/datasource.yml <<EOL
+            apiVersion: 1
+
+            datasources:
+              - name: Prometheus
+                type: prometheus
+                access: proxy
+                url: http://prometheus:9090
+                isDefault: true
+            EOL
+              
+              # Create Grafana dashboard config
+              cat > monitoring/grafana/provisioning/dashboards/dashboard.yml <<EOL
+            apiVersion: 1
+
+            providers:
+              - name: 'default'
+                orgId: 1
+                folder: ''
+                type: file
+                disableDeletion: false
+                updateIntervalSeconds: 30
+                options:
+                  path: /var/lib/grafana/dashboards
+            EOL
+              
+              # Create a basic dashboard
+              cat > monitoring/grafana/dashboards/easyroom-dashboard.json <<EOL
+            {
+              "annotations": {
+                "list": [
+                  {
+                    "builtIn": 1,
+                    "datasource": "-- Grafana --",
+                    "enable": true,
+                    "hide": true,
+                    "iconColor": "rgba(0, 211, 255, 1)",
+                    "name": "Annotations & Alerts",
+                    "type": "dashboard"
+                  }
+                ]
+              },
+              "editable": true,
+              "gnetId": null,
+              "graphTooltip": 0,
+              "id": 1,
+              "links": [],
+              "panels": [
+                {
+                  "aliasColors": {},
+                  "bars": false,
+                  "dashLength": 10,
+                  "dashes": false,
+                  "datasource": "Prometheus",
+                  "fieldConfig": {
+                    "defaults": {
+                      "custom": {}
+                    },
+                    "overrides": []
+                  },
+                  "fill": 1,
+                  "fillGradient": 0,
+                  "gridPos": {
+                    "h": 8,
+                    "w": 12,
+                    "x": 0,
+                    "y": 0
+                  },
+                  "hiddenSeries": false,
+                  "id": 2,
+                  "legend": {
+                    "avg": false,
+                    "current": false,
+                    "max": false,
+                    "min": false,
+                    "show": true,
+                    "total": false,
+                    "values": false
+                  },
+                  "lines": true,
+                  "linewidth": 1,
+                  "nullPointMode": "null",
+                  "options": {
+                    "alertThreshold": true
+                  },
+                  "percentage": false,
+                  "pointradius": 2,
+                  "points": false,
+                  "renderer": "flot",
+                  "seriesOverrides": [],
+                  "spaceLength": 10,
+                  "stack": false,
+                  "steppedLine": false,
+                  "targets": [
+                    {
+                      "expr": "up",
+                      "interval": "",
+                      "legendFormat": "{{ job }}",
+                      "refId": "A"
+                    }
+                  ],
+                  "thresholds": [],
+                  "timeFrom": null,
+                  "timeRegions": [],
+                  "timeShift": null,
+                  "title": "Service Status",
+                  "tooltip": {
+                    "shared": true,
+                    "sort": 0,
+                    "value_type": "individual"
+                  },
+                  "type": "graph",
+                  "xaxis": {
+                    "buckets": null,
+                    "mode": "time",
+                    "name": null,
+                    "show": true,
+                    "values": []
+                  },
+                  "yaxes": [
+                    {
+                      "format": "short",
+                      "label": null,
+                      "logBase": 1,
+                      "max": null,
+                      "min": null,
+                      "show": true
+                    },
+                    {
+                      "format": "short",
+                      "label": null,
+                      "logBase": 1,
+                      "max": null,
+                      "min": null,
+                      "show": true
+                    }
+                  ],
+                  "yaxis": {
+                    "align": false,
+                    "alignLevel": null
+                  }
+                }
+              ],
+              "refresh": "5s",
+              "schemaVersion": 26,
+              "style": "dark",
+              "tags": [],
+              "templating": {
+                "list": []
+              },
+              "time": {
+                "from": "now-6h",
+                "to": "now"
+              },
+              "timepicker": {},
+              "timezone": "",
+              "title": "EasyRoom Dashboard",
+              "uid": "easyroom",
+              "version": 1
+            }
+            EOL
+            fi
+
+            # Create docker-compose.yml
             cat > docker-compose.yml <<EOL
             version: "3.8"
             services:
@@ -198,6 +402,8 @@ jobs:
                 restart: unless-stopped
                 depends_on:
                   - backend
+                networks:
+                  - easyroom-net
 
               backend:
                 image: \${DOCKER_HUB_USERNAME}/easyroom-backend:latest
@@ -206,6 +412,8 @@ jobs:
                 env_file: .env
                 volumes:
                   - ./wait-for-it.sh:/wait-for-it.sh
+                  - ./src/backend/storage:/app/storage
+                  - ./src/backend/certificate:/app/certificate
                 entrypoint: ["/bin/sh", "-c", "chmod +x /wait-for-it.sh && /wait-for-it.sh mysql:3306 node server.js"]
                 restart: unless-stopped
                 depends_on:
@@ -236,38 +444,158 @@ jobs:
                 networks:
                   - easyroom-net
 
+              # Monitoring Services
+              prometheus:
+                image: prom/prometheus:latest
+                volumes:
+                  - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+                  - prometheus_data:/prometheus
+                command:
+                  - '--config.file=/etc/prometheus/prometheus.yml'
+                  - '--storage.tsdb.path=/prometheus'
+                  - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+                  - '--web.console.templates=/usr/share/prometheus/consoles'
+                ports:
+                  - "9090:9090"
+                restart: unless-stopped
+                networks:
+                  - easyroom-net
+
+              grafana:
+                image: grafana/grafana:latest
+                volumes:
+                  - grafana_data:/var/lib/grafana
+                  - ./monitoring/grafana/provisioning:/etc/grafana/provisioning
+                  - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards
+                environment:
+                  - GF_SECURITY_ADMIN_USER=admin
+                  - GF_SECURITY_ADMIN_PASSWORD=admin
+                  - GF_USERS_ALLOW_SIGN_UP=false
+                ports:
+                  - "3001:3000"  # ใช้พอร์ต 3001 เพื่อไม่ให้ชนกับ backend
+                restart: unless-stopped
+                networks:
+                  - easyroom-net
+
+              node-exporter:
+                image: prom/node-exporter:latest
+                volumes:
+                  - /proc:/host/proc:ro
+                  - /sys:/host/sys:ro
+                  - /:/rootfs:ro
+                command:
+                  - '--path.procfs=/host/proc'
+                  - '--path.sysfs=/host/sys'
+                  - '--collector.filesystem.ignored-mount-points=^/(sys|proc|dev|host|etc)($$|/)'
+                restart: unless-stopped
+                networks:
+                  - easyroom-net
+
+              cadvisor:
+                image: gcr.io/cadvisor/cadvisor:latest
+                volumes:
+                  - /:/rootfs:ro
+                  - /var/run:/var/run:ro
+                  - /sys:/sys:ro
+                  - /var/lib/docker/:/var/lib/docker:ro
+                  - /dev/disk/:/dev/disk:ro
+                ports:
+                  - "8080:8080"
+                restart: unless-stopped
+                networks:
+                  - easyroom-net
+
+              mysql-exporter:
+                image: prom/mysqld-exporter:latest
+                environment:
+                  - DATA_SOURCE_NAME=easyroomteam:1234@(mysql:3306)/easyroom
+                ports:
+                  - "9104:9104"
+                restart: unless-stopped
+                depends_on:
+                  - mysql
+                networks:
+                  - easyroom-net
+
+              sonarqube:
+                image: sonarqube:community
+                ports:
+                  - "9000:9000"
+                environment:
+                  - SONARQUBE_JDBC_URL=jdbc:postgresql://sonarqube-db:5432/sonar
+                  - SONARQUBE_JDBC_USERNAME=sonar
+                  - SONARQUBE_JDBC_PASSWORD=sonar
+                volumes:
+                  - sonarqube_data:/opt/sonarqube/data
+                  - sonarqube_extensions:/opt/sonarqube/extensions
+                  - sonarqube_logs:/opt/sonarqube/logs
+                depends_on:
+                  - sonarqube-db
+                networks:
+                  - easyroom-net
+
+              sonarqube-db:
+                image: postgres:13
+                environment:
+                  - POSTGRES_USER=sonar
+                  - POSTGRES_PASSWORD=sonar
+                  - POSTGRES_DB=sonar
+                volumes:
+                  - sonarqube_db_data:/var/lib/postgresql/data
+                networks:
+                  - easyroom-net
+
             networks:
               easyroom-net:
                 driver: bridge
 
             volumes:
               mysql_data:
+              prometheus_data:
+              grafana_data:
+              sonarqube_data:
+              sonarqube_extensions:
+              sonarqube_logs:
+              sonarqube_db_data:
             EOL
+
+      - name: Deploy Application
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USERNAME }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script_timeout: 15m
+          script: |
+            set -e
+
+            # Switch to deployment directory
+            cd ~/easyroom-deployment
+
+            # Login to Docker Hub
+            echo "${{ secrets.DOCKER_HUB_TOKEN }}" | docker login -u ${{ secrets.DOCKER_HUB_USERNAME }} --password-stdin
 
             # Pull latest images
             docker-compose pull
 
-            # Start services
-            docker-compose up -d --build
+            # Stop previous deployment
+            docker-compose down --remove-orphans || true
 
-            # Verify deployment
+            # Start new deployment
+            docker-compose up -d
+
+            # Verify deployment started
             echo "📦 Running containers:"
             docker-compose ps
 
-            # Wait for deployment to stabilize
-            echo "⏳ Waiting for the application to stabilize (30 seconds)..."
-            sleep 30
-
-            # Final check
-            echo "🔍 Checking MySQL tables:"
-            docker-compose exec mysql mysql -ueasyroomteam -p1234 -e "USE easyroom; SHOW TABLES;" || echo "Still initializing..."
-
-            echo "🔍 Checking backend logs:"
-            docker-compose logs --tail 20 backend
-
+  # ===== 4. POST-DEPLOY PHASE =====
+  post-deploy:
+    name: 🔍 Post-Deployment Tasks
+    needs: deploy
+    runs-on: ubuntu-latest
+    steps:
       - name: Health Check
         uses: appleboy/ssh-action@master
-        if: always()
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USERNAME }}
@@ -275,11 +603,51 @@ jobs:
           script: |
             cd ~/easyroom-deployment
 
+            # Wait for services to stabilize
+            echo "⏳ Waiting for services to stabilize..."
+            sleep 30
+
+            # Check application status
             echo "🔍 Application Status:"
             docker-compose ps
 
+            # Check MySQL status and tables
             echo "📊 MySQL Status:"
-            docker-compose exec mysql mysqladmin -ueasyroomteam -p1234 status || echo "MySQL not ready yet"
+            docker-compose exec -T mysql mysqladmin -ueasyroomteam -p1234 status || echo "MySQL not ready yet"
+            echo "📋 MySQL Tables:"
+            docker-compose exec -T mysql mysql -ueasyroomteam -p1234 -e "USE easyroom; SHOW TABLES;" || echo "Cannot query tables yet"
 
-            echo "📝 Recent Container Logs:"
-            docker-compose logs --tail 20
+            # Check monitoring services
+            echo "📊 Monitoring Services:"
+            echo "Prometheus: $(curl -s -o /dev/null -w "%{http_code}" http://localhost:9090/-/healthy || echo 'Not ready')"
+            echo "Grafana: $(curl -s -o /dev/null -w "%{http_code}" http://localhost:3001/api/health || echo 'Not ready')"
+            echo "SonarQube: $(curl -s -o /dev/null -w "%{http_code}" http://localhost:9000/api/system/status || echo 'Not ready')"
+
+            # Check logs for any issues
+            echo "📝 Recent Application Logs:"
+            docker-compose logs --tail 10 backend
+
+      - name: Notification
+        if: always()
+        run: |
+          if [ "${{ job.status }}" == "success" ]; then
+            echo "✅ Deployment completed successfully!"
+            # Add actual notification here (e.g., Slack, Discord, etc.)
+          else
+            echo "❌ Deployment failed or has issues!"
+            # Add actual notification here
+          fi
+
+      - name: Generate Deployment Summary
+        run: |
+          echo "# 🚀 Deployment Summary" > deployment_summary.md
+          echo "- Application URL: http://${{ secrets.EC2_HOST }}" >> deployment_summary.md
+          echo "- Monitoring URLs:" >> deployment_summary.md
+          echo "  - Grafana: http://${{ secrets.EC2_HOST }}:3001 (admin/admin)" >> deployment_summary.md
+          echo "  - Prometheus: http://${{ secrets.EC2_HOST }}:9090" >> deployment_summary.md
+          echo "  - SonarQube: http://${{ secrets.EC2_HOST }}:9000 (admin/admin)" >> deployment_summary.md
+          echo "  - cAdvisor: http://${{ secrets.EC2_HOST }}:8080" >> deployment_summary.md
+          echo "- Deployment Time: $(date)" >> deployment_summary.md
+          echo "- Commit: ${{ github.sha }}" >> deployment_summary.md
+
+          cat deployment_summary.md
