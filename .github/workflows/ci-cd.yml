@@ -572,16 +572,22 @@ jobs:
             # Switch to deployment directory
             cd ~/easyroom-deployment
 
+            # Stop previous deployment
+            docker-compose down --remove-orphans || true
+
+            # Remove only application images (easyroom-frontend and easyroom-backend)
+            echo "🗑️ Removing application images..."
+            docker images | grep -E "${DOCKER_HUB_USERNAME}/easyroom-(frontend|backend)" | awk '{print $1":"$2}' | xargs -r docker rmi -f || true
+
             # Login to Docker Hub
             echo "${{ secrets.DOCKER_HUB_TOKEN }}" | docker login -u ${{ secrets.DOCKER_HUB_USERNAME }} --password-stdin
 
             # Pull latest images
+            echo "⬇️ Pulling latest images..."
             docker-compose pull
 
-            # Stop previous deployment
-            docker-compose down --remove-orphans || true
-
             # Start new deployment
+            echo "🚀 Starting containers..."
             docker-compose up -d
 
             # Verify deployment started
