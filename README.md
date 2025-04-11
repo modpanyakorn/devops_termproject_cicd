@@ -63,7 +63,7 @@ Dependencies in `package.json` from `src/backend/package.json`.
 ```
 
 Backend running on port `3000`.<br>
-!Before running prepare database `.sq` file for dumping database example is `easyroom.sql` that file is mounting with instance (VM) during CI/CD pipeline perform.
+Before running! prepare database `.sql` file for dumping database example is `easyroom.sql` that file is mounting with instance (VM) during CI/CD pipeline perform.
 
 ### Network Config
 
