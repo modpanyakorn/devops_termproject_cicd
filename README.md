@@ -142,19 +142,19 @@ Add Secret in GitHub action repository setting.
     <td>EC2_USERNAME</td>
     <td>ubuntu4088</td>
     <td>Username of instance (VM)</td>
-    <td>Typing `whoami` in termial of VM or find in AWS platform</td>
+    <td>Typing 'whoami' in termial of VM or find in AWS platform</td>
   </tr>
   <tr>
     <td>SONAR_TOKEN</td>
     <td>sqp_cbe61c...</td>
     <td>Sonar Qube platform</td>
-    <td>copy from `Sonar Qube` platform on your server</td>
+    <td>copy from 'Sonar Qube' platform on your server</td>
   </tr>
   <tr>
     <td>SONAR_HOST_URL</td>
     <td>http://172.168.9.12:9000</td>
     <td>Sonar Qube platform</td>
-    <td>copy from `Sonar Qube` platform on your server, actually input key with <b style="background-color: red;">protocols://ip-vm:services-port</b></td>
+    <td>copy from 'Sonar Qube' platform on your server, actually input key with 'protocols://ip-vm:services-port'</td>
   </tr>
   
 </table>
