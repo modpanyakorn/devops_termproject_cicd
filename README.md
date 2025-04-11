@@ -4,7 +4,7 @@
 
 ## About Project
 
-This project perform CI/CD pipeline by `GitHub Action` define stages (Test, Build, Deploy, Post Deploy) and deploy on AWS EC2 (Make sure prepare instance (VM) aleardy).
+This project perform CI/CD pipeline by `GitHub Action` define stages (Test, Build, Deploy, Post Deploy) and deploy on AWS EC2.
 
 ### Test Stage
 
