@@ -8,7 +8,7 @@ This project perform CI/CD pipeline by `GitHub Action` define stages (Test, Buil
 
 ### Test Stage
 
-Test code quality in `Sonar Qube` (Make sure install `Sonar Qube` on Instance (VM) already).
+Test code quality in `Sonar Qube`.
 
 ### Build Stage
 
@@ -16,7 +16,6 @@ Build and push image on `Docker Registry` we have two kind of image.
 
 - Build and Push `Frontend Image`
 - Build and Push `Backend Image`
-  (Make sure install Docker on Instance (VM) already)
 
 ### Deploy Stage
 
