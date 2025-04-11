@@ -154,7 +154,7 @@ Add Secret in GitHub action repository setting.
     <td>SONAR_HOST_URL</td>
     <td>http://172.168.9.12:9000</td>
     <td>Sonar Qube platform</td>
-    <td>copy from `Sonar Qube` platform on your server, actually input key with <b>protocols://ip-vm:services-port</b></td>
+    <td>copy from `Sonar Qube` platform on your server, actually input key with <b style="background-color: red;">protocols://ip-vm:services-port</b></td>
   </tr>
   
 </table>
