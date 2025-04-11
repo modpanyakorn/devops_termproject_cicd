@@ -103,7 +103,7 @@ Config and open port on instance (VM).
   </tr>
 </table>
 
-### Secret
+### Secret Key
 
 Add Secret in GitHub action repository setting.
 
@@ -148,24 +148,24 @@ Add Secret in GitHub action repository setting.
     <td>SONAR_TOKEN</td>
     <td>sqp_cbe61c...</td>
     <td>Sonar Qube platform</td>
-    <td>copy from `Sonar Qube` platform</td>
+    <td>copy from `Sonar Qube` platform on your server</td>
   </tr>
   <tr>
     <td>SONAR_HOST_URL</td>
     <td>http://172.168.9.12:9000</td>
     <td>Sonar Qube platform</td>
-    <td>typing public ip, protocol, port of instance (VM), for port get from config install `Sonar Qube` on VM in this case we use `Docker Container` to install and running `Sonar Qube` on VM or copy `HOST URL` from `Sonar Qube` platform on your server</td>
+    <td>copy from `Sonar Qube` platform on your server, actually input key with <b>protocols://ip-vm:services-port</b></td>
   </tr>
   
 </table>
 
-### Infrastructure
+## Infrastructure
 
 ```bash
 AWS EC2, ubuntu-noble-24.04-amd64-server-20250305
 ```
 
-### Architecture
+## Architecture
 
 ```bash
 easyroom-reservation/
