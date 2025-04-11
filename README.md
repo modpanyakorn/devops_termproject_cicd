@@ -14,9 +14,9 @@ Test code quality in `Sonar Qube` (Make sure install `Sonar Qube` on Instance (V
 
 Build and push image on `Docker Registry` we have two kind of image.
 
-- Build and Push `Frontend Image`.
-- Build and Push `Backend Image`.
-  (Make sure install Docker on Instance (VM) already).
+- Build and Push `Frontend Image`
+- Build and Push `Backend Image`
+  (Make sure install Docker on Instance (VM) already)
 
 ### Deploy Stage
 
