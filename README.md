@@ -2,15 +2,15 @@
   DevOPS Term Project (CI/CD)
 </h1>
 
-# About Project
+## About Project
 
 This project perform CI/CD pipeline by `GitHub Action` define stages (Test, Build, Deploy, Post Deploy) and deploy on AWS EC2 (Make sure prepare instance (VM) aleardy).
 
-#### Test
+### Test Stage
 
 Test code quality in `Sonar Qube` (Make sure install `Sonar Qube` on Instance (VM) already).
 
-#### Build
+### Build Stage
 
 Build and push image on `Docker Registry` we have two kind of image.
 
@@ -18,28 +18,28 @@ Build and push image on `Docker Registry` we have two kind of image.
 - Build and Push `Backend Image`.
   (Make sure install Docker on Instance (VM) already).
 
-#### Deploy
+### Deploy Stage
 
-- Prepare DataBase SQL file for dumping database in `MySql` container for example is `easyroom.sql`.
+- Prepare database `.sql` file for dumping database in `MySql` container for example is `easyroom.sql`.
 - Pull `Docker` image on `Docker Hub` and running on instance (VM).
-  Here is services in `Docker` container.
 
 ```bash
-- apache-http-server (for serving frontend).
-- node (for serving backend).
-- mysql (for database).
+# services in `Docker` container.
+apache-http-server (for serving frontend).
+node (for serving backend).
+mysql (for database).
 ```
 
-#### Post Deploy
+### Post Deploy Stage
 
-- Checking Container Running...
+Checking container is running...
 
-# Prepare Project
+## Prepare Project
 
 ### About Application
 
-Application in this repository using `Node` for running Backend and `Express` for creating API services.
-here is dependencies in `package.json` from `src/backend/package.json`.
+Application in this repository using `Node` for running backend and `Express` for creating API services.<br>
+Dependencies in `package.json` from `src/backend/package.json`.
 
 ```json
 {
@@ -63,50 +63,64 @@ here is dependencies in `package.json` from `src/backend/package.json`.
 }
 ```
 
-Backend running on port `3000`.
-Prepare database file for dumping example is `easyroom.sql` that file is mounting in instance (VM) during CI/CD pipeline perform.
+Backend running on port `3000`.<br>
+!Before running prepare database `.sq` file for dumping database example is `easyroom.sql` that file is mounting with instance (VM) during CI/CD pipeline perform.
 
 ### Network Config
 
-We have to config and open port in instance (VM).
+Config and open port on instance (VM).
 
 <table>
   <tr>
     <th>IP version</th>
     <th>Type</th>
     <th>Protocol</th>
-    <th>Port range</th>
     <th>Description</th>
   </tr>
   <tr>
     <td>IPv4</td>
     <td>SSH</td>
     <td>22</td>
-    <td>For GitHub Action access to VM.</td>
+    <td>For GitHub Action access to VM</td>
   </tr>
   <tr>
     <td>IPv4</td>
     <td>HTTP</td>
     <td>80</td>
-    <td>For every user can access web application by typing public VM IP.</td>
+    <td>For every user can access web application by typing public VM IP</td>
   </tr>
   <tr>
     <td>IPv4</td>
     <td>TCP</td>
     <td>3000</td>
-    <td>For backend API.</td>
+    <td>For backend API</td>
   </tr>
   <tr>
     <td>IPv4</td>
     <td>TCP</td>
     <td>9000</td>
-    <td>For access Sonar Qube (Sonar Qube running on VM).</td>
+    <td>For access Sonar Qube (Sonar Qube running on VM)</td>
   </tr>
 </table>
 
 ### Secret
 
 Add Secret in GitHub action repository setting.
+
+<table>
+  <tr>
+    <th>Secret</th>
+    <th>Example</th>
+    <th>Source</th>
+    <th>Description</th>
+  </tr>
+
+  <tr>
+    <td>DOCKER_HUB_TOKEN</td>
+    <td>dckr_pat_....</td>
+    <td>Docker Hub</td>
+  </tr>
+</table>
 
 - `DOCKER_HUB_TOKEN` from Docker Hub example `dckr_pat_....`.
 - `DOCKER_HUB_USERNAME` from Docker Hub example `samson1234`.
