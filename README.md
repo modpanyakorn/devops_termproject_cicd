@@ -114,21 +114,50 @@ Add Secret in GitHub action repository setting.
     <th>Source</th>
     <th>Description</th>
   </tr>
-
   <tr>
     <td>DOCKER_HUB_TOKEN</td>
     <td>dckr_pat_....</td>
     <td>Docker Hub</td>
+    <td>-</td>
   </tr>
+  <tr>
+    <td>DOCKER_HUB_USERNAME</td>
+    <td>samson1234</td>
+    <td>Docker Hub</td>
+    <td>-</td>
+  </tr>
+  <tr>
+    <td>EC2_HOST</td>
+    <td>172.168.9.12</td>
+    <td>Public IP of instance (VM)</td>
+    <td>-</td>
+  </tr>
+  <tr>
+    <td>EC2_SSH_KEY</td>
+    <td>-----BEGIN RSA PRIVATE KEY----- MIIEpAIBAAKCAQEAtZT9t2YslHI/AS5p6aENWHKwhlfcmlrlDbyxYGO/so2xKvjM......-----END RSA PRIVATE KEY-----</td>
+    <td>Keypair of EC2 instance (VM)</td>
+    <td>-</td>
+  </tr>
+  <tr>
+    <td>EC2_USERNAME</td>
+    <td>ubuntu4088</td>
+    <td>Username of instance (VM)</td>
+    <td>Typing `whoami` in termial of VM or find in AWS platform</td>
+  </tr>
+  <tr>
+    <td>SONAR_TOKEN</td>
+    <td>sqp_cbe61c...</td>
+    <td>Sonar Qube platform</td>
+    <td>copy from `Sonar Qube` platform</td>
+  </tr>
+  <tr>
+    <td>SONAR_HOST_URL</td>
+    <td>http://172.168.9.12:9000</td>
+    <td>Sonar Qube platform</td>
+    <td>typing public ip, protocol, port of instance (VM), for port get from config install `Sonar Qube` on VM in this case we use `Docker Container` to install and running `Sonar Qube` on VM or copy `HOST URL` from `Sonar Qube` platform on your server</td>
+  </tr>
+  
 </table>
-
-- `DOCKER_HUB_TOKEN` from Docker Hub example `dckr_pat_....`.
-- `DOCKER_HUB_USERNAME` from Docker Hub example `samson1234`.
-- `EC2_HOST` from public ip of instance (VM) example `172.168.9.12`.
-- `EC2_SSH_KEY` from keypair of EC2 instance example `-----BEGIN RSA PRIVATE KEY----- MIIEpAIBAAKCAQEAtZT9t2YslHI/AS5p6aENWHKwhlfcmlrlDbyxYGO/so2xKvjM......-----END RSA PRIVATE KEY-----`.
-- `EC2_USERNAME` from username of instance (VM) example `ubuntu4088` or typing `whoami` in termial of VM or see in AWS platform.
-- `SONAR_TOKEN` copy from `Sonar Qube` platform on your server example `sqp_cbe61c...`.
-- `SONAR_HOST_URL` from public ip, protocol, port of instance (VM) example `http://172.168.9.12:9000` for port get from config install `Sonar Qube` on VM in this case we use `Docker Container` to install and running `Sonar Qube` on VM or copy `HOST URL` from `Sonar Qube` platform on your server.
 
 ### Infrastructure
 
