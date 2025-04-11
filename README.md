@@ -8,7 +8,7 @@ This project perform CI/CD pipeline by `GitHub Action` define stages (Test, Buil
 
 ### Test Stage
 
-Test code quality in `Sonar Qube`.
+Test code quality in `Sonar Qube` (If you using this CI/CD script, make sure install Sonar Qube on your server).
 
 ### Build Stage
 
