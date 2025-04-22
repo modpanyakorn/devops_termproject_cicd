@@ -72,8 +72,8 @@ Config and open port on instance (VM).
 <table>
   <tr>
     <th>IP version</th>
-    <th>Type</th>
     <th>Protocol</th>
+    <th>Port</th>
     <th>Description</th>
   </tr>
   <tr>
